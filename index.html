@@ -27,16 +27,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#171224;
-    --panel:#201a30;
-    --panel-2:#2a2240;
-    --line:#443a5c;
-    --brass:#8f7fe0;
-    --brass-bright:#b6a8ff;
-    --cream:#f3f0fb;
-    --cream-dim:#b7aed0;
-    --red:#b34a6e;
-    --red-bright:#d15f86;
+    --ink:#15110c;
+    --panel:#211a11;
+    --panel-2:#2c2216;
+    --line:#5a4626;
+    --brass:#cda43e;
+    --brass-bright:#f0c868;
+    --cream:#f5efe0;
+    --cream-dim:#c7bb9c;
+    --red:#9c2b3a;
+    --red-bright:#c23c4f;
     --green:#6fae74;
     font-size:16px;
   }
@@ -45,7 +45,7 @@
   body{
     position:relative;
     background:
-      radial-gradient(circle at 20% 0%, rgba(143,127,224,0.14), transparent 45%),
+      radial-gradient(circle at 20% 0%, rgba(205,164,62,0.13), transparent 45%),
       var(--ink);
     color:var(--cream);
     font-family:'Inter',system-ui,-apple-system,sans-serif;
@@ -61,8 +61,8 @@
     background-repeat:no-repeat;
     background-position:center 62%;
     background-size:min(620px, 110vw) min(620px, 110vw);
-    opacity:0.09;
-    filter:grayscale(1) contrast(1.1);
+    opacity:0.10;
+    filter:contrast(1.1);
     pointer-events:none;
     z-index:0;
   }
@@ -379,7 +379,6 @@
   <div class="eyebrow">Barbería</div>
   <img src="icons/logo-header.png" alt="JULIO BARBER JD" class="brand-logo">
   <div class="sub">
-    💈 JULIO BARBER 💈<br>
     ✨ Más que un corte, una experiencia. En Julio Barber perfeccionamos cada detalle para resaltar tu mejor imagen. Profesionalismo, precisión y estilo en cada servicio. Porque tu confianza comienza frente al espejo. Reserva tu cita y eleva tu imagen al siguiente nivel.
   </div>
   <div class="auth-bar" id="authBar">
@@ -480,7 +479,7 @@
     </div>
 
     <div class="card" id="galeriaCard">
-      <h2>Galería</h2>
+      <h2>Estilos que inspiran</h2>
       <div id="galeriaScroll" class="gallery-scroll"></div>
       <div class="social-row" id="socialRow"></div>
     </div>

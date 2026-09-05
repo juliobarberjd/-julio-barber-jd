@@ -781,6 +781,13 @@ onAuthStateChanged(auth, (user) => {
       currentProfile = snap.exists() ? snap.data() : { name: "", phone: "", email: user.email };
       renderAuthBar();
       applyProfileToForm();
+    }).catch((err) => {
+      // Si Firestore rechaza la lectura (p.ej. reglas de seguridad mal
+      // configuradas), igual dejamos al cliente reservar: solo no le
+      // llenamos el nombre/celular automáticamente, los escribe a mano.
+      currentProfile = { name: "", phone: "", email: user.email };
+      renderAuthBar();
+      applyProfileToForm();
     });
   }else{
     currentProfile = null;

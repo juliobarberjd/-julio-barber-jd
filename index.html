@@ -102,7 +102,14 @@
     font-size:clamp(28px, 8.2vw, 44px); line-height:0.95; margin:6px 0 2px; color:var(--cream);
     text-shadow:0 2px 0 rgba(0,0,0,0.4);
   }
-  header.top .sub{color:var(--cream-dim); font-size:13px; letter-spacing:0.02em;}
+  .brand-logo{
+    display:block; width:min(320px, 82%); max-width:320px; height:auto;
+    margin:8px auto 6px; border-radius:10px;
+  }
+  header.top .sub{
+    color:var(--cream-dim); font-size:13px; letter-spacing:0.02em;
+    max-width:340px; margin:0 auto; line-height:1.5;
+  }
 
   .auth-bar{margin-top:14px; display:flex; justify-content:center; align-items:center; gap:10px;}
   .auth-pill{
@@ -370,8 +377,11 @@
 <header class="top">
   <button id="navBarbero" class="barber-access" title="Panel del barbero">✂️</button>
   <div class="eyebrow">Barbería</div>
-  <h1>JULIO BARBER JD</h1>
-  <div class="sub">Reserva tu turno · Corte con estilo</div>
+  <img src="icons/logo-header.png" alt="JULIO BARBER JD" class="brand-logo">
+  <div class="sub">
+    💈 JULIO BARBER 💈<br>
+    ✨ Más que un corte, una experiencia. En Julio Barber perfeccionamos cada detalle para resaltar tu mejor imagen. Profesionalismo, precisión y estilo en cada servicio. Porque tu confianza comienza frente al espejo. Reserva tu cita y eleva tu imagen al siguiente nivel.
+  </div>
   <div class="auth-bar" id="authBar">
     <button id="btnAuthOpen" class="auth-pill">Iniciar sesión</button>
   </div>
@@ -418,12 +428,6 @@
 
   <!-- ================= CLIENTE ================= -->
   <section id="tab-cliente" class="active">
-
-    <div class="card" id="galeriaCard">
-      <h2>Galería</h2>
-      <div id="galeriaScroll" class="gallery-scroll"></div>
-      <div class="social-row" id="socialRow"></div>
-    </div>
 
     <div class="card" id="authGateCard">
       <h2>Inicia sesión para reservar</h2>
@@ -473,6 +477,12 @@
         <span>Enviar mensaje a WhatsApp</span>
       </a>
       <button class="secondary" id="btnNueva">Reservar otra cita</button>
+    </div>
+
+    <div class="card" id="galeriaCard">
+      <h2>Galería</h2>
+      <div id="galeriaScroll" class="gallery-scroll"></div>
+      <div class="social-row" id="socialRow"></div>
     </div>
   </section>
 

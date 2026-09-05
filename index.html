@@ -375,7 +375,19 @@
 <body>
 
 <header class="top">
-  <button id="navBarbero" class="barber-access" title="Panel del barbero">✂️</button>
+  <button id="navBarbero" class="barber-access" title="Panel del barbero">
+    <svg viewBox="0 0 120 56" width="17" height="auto" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <mask id="bladeHoles">
+        <rect x="0" y="0" width="120" height="56" fill="#fff"/>
+        <ellipse cx="34" cy="28" rx="13" ry="9" fill="#000"/>
+        <circle cx="60" cy="28" r="7" fill="#000"/>
+        <ellipse cx="86" cy="28" rx="13" ry="9" fill="#000"/>
+      </mask>
+      <path
+        d="M10,0 L110,0 L110,9 L120,9 L120,19 L110,19 L110,37 L120,37 L120,47 L110,47 L110,56 L10,56 L10,47 L0,47 L0,37 L10,37 L10,19 L0,19 L0,9 L10,9 Z"
+        fill="currentColor" mask="url(#bladeHoles)"/>
+    </svg>
+  </button>
   <div class="eyebrow">Barbería</div>
   <img src="icons/logo-header.png" alt="JULIO BARBER JD" class="brand-logo">
   <div class="sub">
@@ -655,9 +667,9 @@ const db = getFirestore(fbApp);
 
 const SCHEDULE = {
   // Lunes:
-  //  · Mañana: 9:00am - 12:20pm (última cita), receso 12:20pm(fin de cita)-3:00pm
-  //  · Tarde:  3:00pm - 8:00pm (última cita completa cae en 7:40pm)
-  1: {blocks: [{start: 9*60, end: 12*60+20}, {start: 15*60, end: 20*60}]},
+  //  · Mañana: 10:00am - 12:00pm (última cita), receso hasta 3:00pm
+  //  · Tarde:  3:00pm - 9:00pm (última cita completa cae justo en 9:00pm)
+  1: {blocks: [{start: 10*60, end: 12*60}, {start: 15*60, end: 21*60}]},
   // Martes, miércoles y jueves:
   //  · Mañana: 10:00am - 12:00pm (última cita), receso hasta 3:00pm
   //  · Tarde:  3:00pm - 8:00pm (última cita completa cae en 7:40pm)

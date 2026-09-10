@@ -364,6 +364,34 @@
   .gallery-empty{
     font-size:12px; color:var(--cream-dim); text-align:center; padding:14px 6px;
   }
+
+  /* ===== Servicios y precios ===== */
+  .price-row{
+    display:flex; gap:12px; align-items:center;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; margin-bottom:10px;
+  }
+  .price-icon{
+    width:38px; height:38px; border-radius:50%; background:var(--ink);
+    border:1px solid var(--line); display:flex; align-items:center; justify-content:center;
+    font-size:17px; flex-shrink:0;
+  }
+  .price-info{flex:1; min-width:0;}
+  .price-title{
+    font-family:'Bebas Neue'; font-size:14px; letter-spacing:0.03em; color:var(--cream);
+    line-height:1.15;
+  }
+  .price-amount{
+    font-family:'Bebas Neue'; font-size:24px; color:var(--brass-bright); line-height:1.1; margin-top:2px;
+  }
+  .price-desc{font-size:11.5px; color:var(--cream-dim); margin-top:2px; line-height:1.3;}
+  .precios-fotos{
+    display:flex; gap:8px; margin-bottom:14px;
+  }
+  .precios-fotos img{
+    flex:1; width:50%; height:150px; object-fit:cover; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel-2);
+  }
   .lightbox-overlay{
     position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:60;
     display:flex; align-items:center; justify-content:center; padding:20px;
@@ -500,6 +528,50 @@
       <h2>Estilos que inspiran</h2>
       <div id="galeriaScroll" class="gallery-scroll"></div>
       <div class="social-row" id="socialRow"></div>
+    </div>
+
+    <div class="card" id="preciosCard">
+      <h2>Servicios y precios</h2>
+
+      <div class="precios-fotos">
+        <img src="fotos/foto1.jpg" alt="Corte en JULIO BARBER JD" loading="lazy" onerror="this.remove()">
+        <img src="fotos/foto12.jpg" alt="Corte en JULIO BARBER JD" loading="lazy" onerror="this.remove()">
+      </div>
+
+      <div class="price-row">
+        <div class="price-icon">✂️</div>
+        <div class="price-info">
+          <div class="price-title">CORTE DE CABELLO PARA ADULTOS</div>
+          <div class="price-amount">$20.000</div>
+          <div class="price-desc">Sencillo</div>
+        </div>
+      </div>
+
+      <div class="price-row">
+        <div class="price-icon">💈</div>
+        <div class="price-info">
+          <div class="price-title">CORTE DE CABELLO PARA ADULTOS</div>
+          <div class="price-amount">$23.000</div>
+          <div class="price-desc">Incluye: barba + perfilado + mascarilla + cejas. Acabado completo y cuidado para tu imagen.</div>
+        </div>
+      </div>
+
+      <div class="price-row">
+        <div class="price-icon">🧒</div>
+        <div class="price-info">
+          <div class="price-title">CORTE DE CABELLO PARA NIÑOS</div>
+          <div class="price-amount">$19.000</div>
+          <div class="price-desc">Estilo, comodidad y atención especial para los más pequeños.</div>
+        </div>
+      </div>
+
+      <a class="whatsapp-btn" id="btnPreciosWhatsapp" target="_blank">
+        <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+          <path fill="#fff" d="M16 3C9.096 3 3.5 8.596 3.5 15.5c0 2.38.664 4.61 1.816 6.51L3 29l7.16-2.276A12.44 12.44 0 0 0 16 28c6.904 0 12.5-5.596 12.5-12.5S22.904 3 16 3zm0 22.727a10.19 10.19 0 0 1-5.19-1.42l-.372-.222-4.25 1.352 1.375-4.144-.242-.386A10.19 10.19 0 0 1 5.773 15.5C5.773 9.845 10.345 5.273 16 5.273S26.227 9.845 26.227 15.5 21.655 25.727 16 25.727z"/>
+          <path fill="#fff" d="M21.62 18.11c-.306-.153-1.81-.893-2.09-.995-.28-.102-.484-.153-.688.154-.204.306-.79.994-.968 1.199-.178.204-.357.23-.663.077-.306-.153-1.293-.477-2.464-1.52-.911-.812-1.526-1.815-1.705-2.121-.178-.306-.019-.472.134-.624.138-.138.306-.357.459-.536.153-.178.204-.306.306-.51.102-.204.051-.383-.026-.536-.077-.153-.688-1.658-.943-2.27-.248-.596-.5-.515-.688-.525-.178-.008-.382-.01-.586-.01-.204 0-.535.077-.816.383-.28.306-1.07 1.046-1.07 2.55 0 1.505 1.096 2.96 1.249 3.164.153.204 2.158 3.295 5.229 4.622.73.315 1.3.503 1.744.644.733.233 1.4.2 1.928.121.588-.088 1.81-.74 2.065-1.454.255-.714.255-1.327.178-1.454-.076-.128-.28-.204-.586-.357z"/>
+        </svg>
+        <span>Agenda tu cita</span>
+      </a>
     </div>
   </section>
 
@@ -1711,6 +1783,14 @@ resetClientView();
 refreshDataFromServer(); // trae los datos apenas carga la página
 renderGaleria();
 renderSocial();
+
+// Botón "Agenda tu cita" de la tarjeta de Servicios y precios: abre
+// WhatsApp directo con el barbero, con un mensaje ya escrito.
+const btnPreciosWhatsapp = document.getElementById("btnPreciosWhatsapp");
+if (btnPreciosWhatsapp) {
+  const mensajePrecios = "Hola JULIO BARBER JD, quiero agendar una cita ✂️";
+  btnPreciosWhatsapp.href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajePrecios)}`;
+}
 </script>
 </body>
 </html>

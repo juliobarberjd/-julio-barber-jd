@@ -958,26 +958,52 @@ function apiPost(action, payload){
   }).then(function(r){ return r.json(); });
 }
 
-function refreshDataFromServer(onDone, onFail){
+// Caché cortita del lado del cliente: si la app pide los datos de nuevo
+// a los pocos segundos (ej. el cliente cambia de día varias veces rápido),
+// reutilizamos lo último que trajimos en vez de volver a pedirlo.
+var ULTIMA_CONSULTA_MS = 0;
+var CACHE_CLIENTE_MS = 6000; // 6 segundos
+
+function refreshDataFromServer(onDone, onFail, forzar){
   if(!WEBAPP_URL || WEBAPP_URL.indexOf("PEGA_AQUI") === 0){
     alert("Falta configurar WEBAPP_URL en el código con el link de tu Apps Script.");
     return;
   }
+
+  var haceRato = Date.now() - ULTIMA_CONSULTA_MS;
+  if(!forzar && dataLoaded && haceRato < CACHE_CLIENTE_MS){
+    if(onDone) onDone();
+    return;
+  }
+
   setSyncStatus("loading");
-  apiGet("getData")
-    .then(function(data){
-      CITAS = data.citas || [];
-      BLOQUEOS = data.bloqueos || [];
-      HORAS_BLOQUEADAS = data.horasBloqueadas || [];
-      dataLoaded = true;
-      setSyncStatus("ok");
-      if(onDone) onDone();
-    })
-    .catch(function(err){
-      setSyncStatus("error");
-      if(onFail) onFail(err);
-      else console.error(err);
-    });
+
+  var intentarConsulta = function(esReintento){
+    apiGet("getData")
+      .then(function(data){
+        CITAS = data.citas || [];
+        BLOQUEOS = data.bloqueos || [];
+        HORAS_BLOQUEADAS = data.horasBloqueadas || [];
+        dataLoaded = true;
+        ULTIMA_CONSULTA_MS = Date.now();
+        setSyncStatus("ok");
+        if(onDone) onDone();
+      })
+      .catch(function(err){
+        // Si es el primer intento, probamos una vez más en silencio antes
+        // de mostrar cualquier error — muchas fallas son solo un hipo
+        // pasajero de la red o de Apps Script bajo carga.
+        if(!esReintento){
+          setTimeout(function(){ intentarConsulta(true); }, 1200);
+          return;
+        }
+        setSyncStatus("error");
+        if(onFail) onFail(err);
+        else console.error(err);
+      });
+  };
+
+  intentarConsulta(false);
 }
 
 function setSyncStatus(state){
@@ -1126,7 +1152,7 @@ fechaInput.addEventListener("change", () => {
   }, () => {
     fechaInput.disabled = false;
     alert("No se pudo conectar. Revisa tu conexión a internet e intenta de nuevo.");
-  });
+  }, true);
 });
 
 function renderClientDay(){
@@ -1222,7 +1248,7 @@ btnReservar.addEventListener("click", () => {
       if(!res.ok){
         alert(res.message || "No se pudo registrar la cita. Intenta de nuevo.");
         updateButtonState();
-        refreshDataFromServer(() => renderSlots(dateStr));
+        refreshDataFromServer(() => renderSlots(dateStr), null, true);
         return;
       }
       const appt = res.appt;
@@ -1272,7 +1298,7 @@ function checkPin(){
     if("Notification" in window && Notification.permission === "default"){
       Notification.requestPermission();
     }
-    refreshDataFromServer(refreshBarberPanel);
+    refreshDataFromServer(refreshBarberPanel, null, true);
     if(pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => {
       if(barberUnlocked) refreshDataFromServer(refreshBarberPanel);
@@ -1293,7 +1319,7 @@ document.getElementById("btnSalirPanel").addEventListener("click", () => {
 });
 
 document.getElementById("btnRefrescar").addEventListener("click", () => {
-  refreshDataFromServer(refreshBarberPanel);
+  refreshDataFromServer(refreshBarberPanel, null, true);
 });
 
 // Avisa con sonido + notificación del navegador cuando aparece una cita nueva
@@ -1399,7 +1425,7 @@ function renderListaCitas(){
         if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
           delBtn.disabled = true;
           apiPost("cancelarCita", { id: a.id })
-            .then(() => refreshDataFromServer(refreshBarberPanel))
+            .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
             .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); delBtn.disabled = false; });
         }
       });
@@ -1416,7 +1442,7 @@ document.getElementById("listaCitas").addEventListener("change", (e) => {
   const val = e.target.value;
   e.target.disabled = true;
   apiPost("actualizarEstado", { id: id, status: val })
-    .then(() => refreshDataFromServer(refreshBarberPanel))
+    .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
     .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
 });
 
@@ -1476,7 +1502,7 @@ document.getElementById("btnBloquear").addEventListener("click", () => {
       if(!res.ok){ alert(res.message || "No se pudo bloquear el día."); return; }
       bloqueoFecha.value = "";
       document.getElementById("bloqueoMotivo").value = "";
-      refreshDataFromServer(refreshBarberPanel);
+      refreshDataFromServer(refreshBarberPanel, null, true);
     })
     .catch(() => {
       btn.disabled = false;
@@ -1510,7 +1536,7 @@ function renderBloqueos(){
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
       apiPost("desbloquearDia", { date: b.date })
-        .then(() => refreshDataFromServer(refreshBarberPanel))
+        .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);
@@ -1570,7 +1596,7 @@ document.getElementById("btnBloquearHora").addEventListener("click", () => {
       bloqueoHoraFecha.value = "";
       bloqueoHoraSelect.innerHTML = '<option value="">Elige una fecha primero</option>';
       document.getElementById("bloqueoHoraMotivo").value = "";
-      refreshDataFromServer(refreshBarberPanel);
+      refreshDataFromServer(refreshBarberPanel, null, true);
     })
     .catch(() => {
       btn.disabled = false;
@@ -1604,7 +1630,7 @@ function renderHorasBloqueadas(){
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
       apiPost("desbloquearHora", { date: h.date, minutes: h.minutes })
-        .then(() => refreshDataFromServer(refreshBarberPanel))
+        .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);

@@ -593,6 +593,18 @@
 
     <div id="panelBarbero" style="display:none;">
 
+      <div class="card" id="migracionCard" style="border-color:var(--brass);">
+        <h2 style="font-size:16px;">⚠️ Migración única a Firestore</h2>
+        <div style="font-size:12.5px; color:var(--cream-dim); margin-bottom:10px;">
+          Úsalo UNA sola vez: copia todo lo que ya está en tu Google Sheet
+          (citas, días y horas bloqueadas) hacia Firestore, para que nada
+          quede como "libre" por error. Después de usarlo, borra esta
+          tarjeta del código.
+        </div>
+        <button class="secondary" id="btnMigrar">Migrar historial del Sheet a Firestore</button>
+        <div id="migracionEstado" style="font-size:12.5px; margin-top:8px;"></div>
+      </div>
+
       <div class="sync-row">
         <span><span class="sync-dot" id="syncDot"></span><span id="syncText">Al día</span></span>
         <button id="btnRefrescar">Actualizar ahora</button>
@@ -671,7 +683,8 @@ import {
   onAuthStateChanged, signOut, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, setDoc, getDoc
+  getFirestore, doc, setDoc, getDoc, collection, onSnapshot,
+  runTransaction, updateDoc, deleteDoc, writeBatch, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
@@ -686,6 +699,12 @@ const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxtKuaQibWOL3sz72DfA
 const BARBER_WHATSAPP = "573104198269";
 
 const BARBER_PIN = "2345"; // Cambia este PIN por el que prefieras
+// El correo con el que TÚ (el barbero) inicias sesión en la app.
+// Debe ser exactamente el mismo correo con el que creaste tu cuenta
+// aquí mismo (botón "Iniciar sesión"), y el mismo que pusiste en las
+// reglas de seguridad de Firestore. Si no coincide, el panel no va a
+// poder guardar cambios.
+const BARBER_EMAIL = "juliobarberjd@gmail.com";
 const STEP = 40; // minutos entre citas
 
 // ---- GALERÍA DE FOTOS ----
@@ -886,9 +905,16 @@ onAuthStateChanged(auth, (user) => {
       renderAuthBar();
       applyProfileToForm();
     });
+    // Con sesión iniciada, las reglas de Firestore ya permiten leer
+    // citas/bloqueos — arrancamos las escuchas en tiempo real.
+    iniciarEscuchaFirestore();
+    // Si el barbero ya tenía el PIN puesto y estaba esperando a que
+    // iniciara sesión con su correo, esto termina de abrirle el panel.
+    intentarAbrirPanelBarbero();
   }else{
     currentProfile = null;
     renderAuthBar();
+    detenerEscuchaFirestore();
   }
 });
 
@@ -935,7 +961,7 @@ function applyProfileToForm(){
 document.getElementById("btnAuthOpen").addEventListener("click", () => openAuthModal("login"));
 
 /* =========================================================
-   ESTADO EN MEMORIA (se llena desde el Google Sheet)
+   ESTADO EN MEMORIA (ahora en vivo desde Firestore)
    ========================================================= */
 let CITAS = [];
 let BLOQUEOS = [];
@@ -943,7 +969,13 @@ let HORAS_BLOQUEADAS = [];
 let dataLoaded = false;
 
 /* =========================================================
-   CONEXIÓN AL BACKEND (Google Apps Script) VÍA FETCH
+   RESPALDO EN GOOGLE SHEETS (Apps Script) — NO BLOQUEANTE
+   ---------------------------------------------------------
+   Estas dos funciones solo se usan para mandar una COPIA de cada
+   acción hacia la Hoja de Google (para los correos y el historial).
+   Nunca se esperan antes de mostrarle algo al cliente ni al barbero:
+   si fallan o tardan, no le afecta nada a lo que ya quedó guardado
+   en Firestore.
    ========================================================= */
 function apiGet(action){
   return fetch(WEBAPP_URL + "?action=" + encodeURIComponent(action))
@@ -958,52 +990,59 @@ function apiPost(action, payload){
   }).then(function(r){ return r.json(); });
 }
 
-// Caché cortita del lado del cliente: si la app pide los datos de nuevo
-// a los pocos segundos (ej. el cliente cambia de día varias veces rápido),
-// reutilizamos lo último que trajimos en vez de volver a pedirlo.
-var ULTIMA_CONSULTA_MS = 0;
-var CACHE_CLIENTE_MS = 6000; // 6 segundos
+/* =========================================================
+   FIRESTORE — ESCUCHAS EN TIEMPO REAL (fuente de verdad)
+   ---------------------------------------------------------
+   En vez de "preguntar" cada tantos segundos (como se hacía antes
+   con Apps Script), nos conectamos UNA vez con onSnapshot y
+   Firestore nos avisa solo, al instante, cada vez que algo cambia
+   de verdad. Esto es lo que evita que la app se sienta "pegada".
+   ========================================================= */
+let unsubCitas = null, unsubBloqueosDias = null, unsubBloqueosHoras = null;
 
-function refreshDataFromServer(onDone, onFail, forzar){
-  if(!WEBAPP_URL || WEBAPP_URL.indexOf("PEGA_AQUI") === 0){
-    alert("Falta configurar WEBAPP_URL en el código con el link de tu Apps Script.");
-    return;
-  }
-
-  var haceRato = Date.now() - ULTIMA_CONSULTA_MS;
-  if(!forzar && dataLoaded && haceRato < CACHE_CLIENTE_MS){
-    if(onDone) onDone();
-    return;
-  }
+function iniciarEscuchaFirestore(){
+  if(unsubCitas) return; // ya está escuchando, no dupliques la conexión
 
   setSyncStatus("loading");
 
-  var intentarConsulta = function(esReintento){
-    apiGet("getData")
-      .then(function(data){
-        CITAS = data.citas || [];
-        BLOQUEOS = data.bloqueos || [];
-        HORAS_BLOQUEADAS = data.horasBloqueadas || [];
-        dataLoaded = true;
-        ULTIMA_CONSULTA_MS = Date.now();
-        setSyncStatus("ok");
-        if(onDone) onDone();
-      })
-      .catch(function(err){
-        // Si es el primer intento, probamos una vez más en silencio antes
-        // de mostrar cualquier error — muchas fallas son solo un hipo
-        // pasajero de la red o de Apps Script bajo carga.
-        if(!esReintento){
-          setTimeout(function(){ intentarConsulta(true); }, 1200);
-          return;
-        }
-        setSyncStatus("error");
-        if(onFail) onFail(err);
-        else console.error(err);
-      });
-  };
+  unsubCitas = onSnapshot(collection(db, "citas"), (snap) => {
+    CITAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    dataLoaded = true;
+    setSyncStatus("ok");
+    onDatosActualizados();
+  }, (err) => {
+    setSyncStatus("error");
+  });
 
-  intentarConsulta(false);
+  unsubBloqueosDias = onSnapshot(collection(db, "bloqueosDias"), (snap) => {
+    BLOQUEOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onDatosActualizados();
+  });
+
+  unsubBloqueosHoras = onSnapshot(collection(db, "bloqueosHoras"), (snap) => {
+    HORAS_BLOQUEADAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onDatosActualizados();
+  });
+}
+
+function detenerEscuchaFirestore(){
+  if(unsubCitas){ unsubCitas(); unsubCitas = null; }
+  if(unsubBloqueosDias){ unsubBloqueosDias(); unsubBloqueosDias = null; }
+  if(unsubBloqueosHoras){ unsubBloqueosHoras(); unsubBloqueosHoras = null; }
+  CITAS = []; BLOQUEOS = []; HORAS_BLOQUEADAS = [];
+  dataLoaded = false;
+}
+
+// Se llama cada vez que llega una actualización en vivo de Firestore.
+// Vuelve a dibujar solo lo que esté visible en este momento, sin
+// recargar la página ni pedirle nada al usuario.
+function onDatosActualizados(){
+  if(fechaInput && fechaInput.value){
+    renderClientDay();
+  }
+  if(barberUnlocked){
+    refreshBarberPanel();
+  }
 }
 
 function setSyncStatus(state){
@@ -1100,7 +1139,7 @@ function irAVistaCliente(){
 }
 function irAVistaBarbero(){
   tabBarbero.classList.add("active"); tabCliente.classList.remove("active");
-  if(barberUnlocked) refreshDataFromServer(refreshBarberPanel);
+  if(barberUnlocked) refreshBarberPanel();
 }
 
 navBarbero.addEventListener("click", irAVistaBarbero);
@@ -1145,14 +1184,7 @@ window.addEventListener("pageshow", resetClientView);
 // Al cambiar la fecha, primero traemos los datos más recientes del Sheet
 // (para no mostrar un horario "libre" que alguien ya tomó hace un minuto).
 fechaInput.addEventListener("change", () => {
-  fechaInput.disabled = true;
-  refreshDataFromServer(() => {
-    fechaInput.disabled = false;
-    renderClientDay();
-  }, () => {
-    fechaInput.disabled = false;
-    alert("No se pudo conectar. Revisa tu conexión a internet e intenta de nuevo.");
-  }, true);
+  renderClientDay();
 });
 
 function renderClientDay(){
@@ -1165,6 +1197,12 @@ function renderClientDay(){
   cerradoMsg.style.display = "none";
 
   if(!dateStr) return;
+
+  if(!dataLoaded){
+    diaInfo.style.display = "block";
+    diaInfo.textContent = "Cargando disponibilidad…";
+    return;
+  }
 
   const blocked = isBlocked(dateStr);
   const day = dateFromStr(dateStr).getDay();
@@ -1230,34 +1268,53 @@ function updateButtonState(){
 
 btnReservar.addEventListener("click", () => {
   const dateStr = fechaInput.value;
+  const minutes = selectedSlot;
+  const citaId = `${dateStr}_${minutes}`;
+
   const cita = {
     date: dateStr,
-    minutes: selectedSlot,
-    time: minutesToLabel(selectedSlot),
+    minutes: minutes,
+    time: minutesToLabel(minutes),
     name: nombreInput.value.trim(),
     phone: celularInput.value.trim(),
-    email: currentUser ? currentUser.email : ""
+    email: currentUser ? currentUser.email : "",
+    status: "pendiente",
+    createdAt: new Date().toISOString()
   };
 
   btnReservar.disabled = true;
   btnReservar.textContent = "Guardando…";
 
-  apiPost("crearCita", cita)
-    .then((res) => {
-      btnReservar.textContent = "Confirmar cita";
-      if(!res.ok){
-        alert(res.message || "No se pudo registrar la cita. Intenta de nuevo.");
-        updateButtonState();
-        refreshDataFromServer(() => renderSlots(dateStr), null, true);
-        return;
-      }
-      const appt = res.appt;
-      document.getElementById("cNombre").textContent = appt.name;
-      document.getElementById("cCelular").textContent = appt.phone;
-      document.getElementById("cFecha").textContent = prettyDate(appt.date);
-      document.getElementById("cHora").textContent = appt.time;
+  const citaRef = doc(db, "citas", citaId);
+  const diaRef = doc(db, "bloqueosDias", dateStr);
+  const horaRef = doc(db, "bloqueosHoras", citaId);
 
-      const mensajeWhatsapp = `Hola! Soy ${appt.name}. Confirmo mi cita en JULIO BARBER JD:\n\n📅 Día: ${prettyDate(appt.date)}\n🕐 Hora: ${appt.time}\n\n¡Nos vemos!`;
+  // La reserva pasa por una transacción de Firestore: revisa que el
+  // turno, el día y la hora sigan libres, y crea la cita, todo como
+  // una sola operación atómica. Así, si dos personas le dan
+  // "Confirmar" casi al mismo tiempo por el mismo horario, solo una
+  // de las dos gana — la otra recibe el aviso de "ocupado" al instante.
+  runTransaction(db, (transaction) => {
+    return Promise.all([
+      transaction.get(citaRef),
+      transaction.get(diaRef),
+      transaction.get(horaRef)
+    ]).then(([citaSnap, diaSnap, horaSnap]) => {
+      if(citaSnap.exists()) throw new Error("OCUPADO");
+      if(diaSnap.exists()) throw new Error("DIA_BLOQUEADO");
+      if(horaSnap.exists()) throw new Error("HORA_BLOQUEADA");
+      transaction.set(citaRef, cita);
+    });
+  })
+    .then(() => {
+      btnReservar.textContent = "Confirmar cita";
+
+      document.getElementById("cNombre").textContent = cita.name;
+      document.getElementById("cCelular").textContent = cita.phone;
+      document.getElementById("cFecha").textContent = prettyDate(cita.date);
+      document.getElementById("cHora").textContent = cita.time;
+
+      const mensajeWhatsapp = `Hola! Soy ${cita.name}. Confirmo mi cita en JULIO BARBER JD:\n\n📅 Día: ${prettyDate(cita.date)}\n🕐 Hora: ${cita.time}\n\n¡Nos vemos!`;
       document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
       formWrap.style.display = "none";
@@ -1265,11 +1322,25 @@ btnReservar.addEventListener("click", () => {
       diaInfo.style.display = "none";
       confirmCard.style.display = "block";
       confirmCard.scrollIntoView({behavior:"smooth", block:"start"});
+
+      // Copia de respaldo hacia la Hoja de Google (correos + historial),
+      // EN SEGUNDO PLANO: si esto falla, no le afecta nada al cliente,
+      // su cita ya quedó guardada arriba, en Firestore.
+      apiPost("crearCita", { ...cita, id: citaId }).catch(() => {});
     })
     .catch((err) => {
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
-      alert("No se pudo conectar para guardar la cita. Revisa tu internet e intenta de nuevo.");
+      if(err && err.message === "OCUPADO"){
+        alert("Ese horario acaba de ser reservado por otra persona. Elige otro, por favor.");
+      }else if(err && err.message === "DIA_BLOQUEADO"){
+        alert("Ese día la barbería no atiende. Elige otra fecha.");
+      }else if(err && err.message === "HORA_BLOQUEADA"){
+        alert("Esa hora no está disponible. Elige otro horario.");
+      }else{
+        alert("No se pudo registrar la cita. Revisa tu conexión e intenta de nuevo.");
+      }
+      renderSlots(dateStr);
     });
 });
 
@@ -1284,43 +1355,149 @@ const pinInput = document.getElementById("pinInput");
 const pinError = document.getElementById("pinError");
 
 let barberUnlocked = false;
-let pollTimer = null;
+let pinValidado = false; // ya escribió el PIN correcto; puede estar esperando el login
 
 document.getElementById("btnPin").addEventListener("click", checkPin);
 pinInput.addEventListener("keydown", e => { if(e.key === "Enter") checkPin(); });
 
 function checkPin(){
   if(pinInput.value === BARBER_PIN){
-    barberUnlocked = true;
-    pinCard.style.display = "none";
-    panelBarbero.style.display = "block";
+    pinValidado = true;
     pinError.textContent = "";
-    if("Notification" in window && Notification.permission === "default"){
-      Notification.requestPermission();
-    }
-    refreshDataFromServer(refreshBarberPanel, null, true);
-    if(pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(() => {
-      if(barberUnlocked) refreshDataFromServer(refreshBarberPanel);
-    }, 25000); // se auto-actualiza cada 25 segundos
+    intentarAbrirPanelBarbero();
   }else{
     pinError.textContent = "PIN incorrecto. Intenta de nuevo.";
     pinInput.value = "";
   }
 }
 
+// Se llama justo después de validar el PIN, y también cada vez que
+// cambia la sesión de Firebase — por si ya habías puesto el PIN y
+// solo faltaba iniciar sesión con el correo del barbero.
+function intentarAbrirPanelBarbero(){
+  if(!pinValidado || barberUnlocked) return;
+
+  if(!currentUser){
+    pinError.textContent = "Ahora inicia sesión con tu correo de barbero para continuar.";
+    openAuthModal("login");
+    return;
+  }
+
+  if(currentUser.email !== BARBER_EMAIL){
+    pinError.textContent = `Esta cuenta (${currentUser.email}) no es la del barbero. Cierra sesión y vuelve a entrar con ${BARBER_EMAIL}.`;
+    return;
+  }
+
+  barberUnlocked = true;
+  pinCard.style.display = "none";
+  panelBarbero.style.display = "block";
+  pinError.textContent = "";
+  if("Notification" in window && Notification.permission === "default"){
+    Notification.requestPermission();
+  }
+  // Los datos ya están llegando en vivo por Firestore — solo hace
+  // falta dibujarlos por primera vez.
+  refreshBarberPanel();
+}
+
 document.getElementById("btnSalirPanel").addEventListener("click", () => {
   barberUnlocked = false;
+  pinValidado = false;
   lastKnownCitasCount = null;
-  if(pollTimer) clearInterval(pollTimer);
   pinInput.value = "";
   pinCard.style.display = "block";
   panelBarbero.style.display = "none";
 });
 
+// Los datos ya llegan en vivo por Firestore, así que "Actualizar ahora"
+// solo vuelve a dibujar con lo que ya está en memoria — pero lo dejamos
+// por si alguna vez quieres forzar un refresco visual.
 document.getElementById("btnRefrescar").addEventListener("click", () => {
-  refreshDataFromServer(refreshBarberPanel, null, true);
+  refreshBarberPanel();
 });
+
+/* =========================================================
+   MIGRACIÓN ÚNICA: copia lo que ya hay en el Sheet hacia Firestore
+   (bórrala del código después de usarla una vez)
+   ========================================================= */
+document.getElementById("btnMigrar").addEventListener("click", () => {
+  const btn = document.getElementById("btnMigrar");
+  const estado = document.getElementById("migracionEstado");
+
+  if(!confirm("Esto copia TODO lo que hay en tu Google Sheet hacia Firestore. Solo deberías hacerlo una vez. ¿Continuar?")) return;
+
+  btn.disabled = true;
+  estado.textContent = "Leyendo la Hoja de Google (puede tardar un poco con muchos registros)…";
+
+  apiGet("getData")
+    .then((data) => {
+      const citas = data.citas || [];
+      const bloqueos = data.bloqueos || [];
+      const horasBloqueadas = data.horasBloqueadas || [];
+      const total = citas.length + bloqueos.length + horasBloqueadas.length;
+
+      if(total === 0){
+        estado.textContent = "No había nada en la Hoja para migrar.";
+        btn.disabled = false;
+        return;
+      }
+
+      const operaciones = [];
+      citas.forEach(c => {
+        const id = `${c.date}_${c.minutes}`;
+        operaciones.push({ ref: doc(db, "citas", id), data: {
+          date: c.date, minutes: Number(c.minutes), time: c.time, name: c.name,
+          phone: c.phone, email: c.email || "", status: c.status || "pendiente",
+          createdAt: c.createdAt || new Date().toISOString()
+        }});
+      });
+      bloqueos.forEach(b => {
+        operaciones.push({ ref: doc(db, "bloqueosDias", b.date), data: { date: b.date, reason: b.reason || "" } });
+      });
+      horasBloqueadas.forEach(h => {
+        const id = `${h.date}_${h.minutes}`;
+        operaciones.push({ ref: doc(db, "bloqueosHoras", id), data: {
+          date: h.date, minutes: Number(h.minutes), time: h.time, reason: h.reason || ""
+        }});
+      });
+
+      return migrarPorLotes(operaciones, estado);
+    })
+    .then(() => {
+      estado.textContent = "✅ Migración terminada. Ya puedes borrar esta tarjeta del código.";
+      btn.disabled = false;
+    })
+    .catch((err) => {
+      estado.textContent = "❌ Algo falló: " + (err && err.message ? err.message : err);
+      btn.disabled = false;
+    });
+});
+
+// Escribe en Firestore de a 500 (el máximo por lote), y si una ráfaga
+// tan grande dispara un error temporal de cuota, espera un poco y
+// reintenta ese mismo lote antes de rendirse.
+function migrarPorLotes(operaciones, estado, intento){
+  intento = intento || 0;
+  if(operaciones.length === 0) return Promise.resolve();
+
+  const lote = operaciones.slice(0, 500);
+  const resto = operaciones.slice(500);
+
+  const batch = writeBatch(db);
+  lote.forEach(op => batch.set(op.ref, op.data));
+
+  estado.textContent = `Migrando… quedan ${operaciones.length} registro(s).`;
+
+  return batch.commit()
+    .then(() => migrarPorLotes(resto, estado))
+    .catch((err) => {
+      if(err && err.code === "resource-exhausted" && intento < 3){
+        return new Promise(resolve => setTimeout(resolve, 2000))
+          .then(() => migrarPorLotes(operaciones, estado, intento + 1));
+      }
+      throw err;
+    });
+}
 
 // Avisa con sonido + notificación del navegador cuando aparece una cita nueva
 // mientras tienes el panel abierto (el correo llega igual, esto es un plus).
@@ -1424,8 +1601,10 @@ function renderListaCitas(){
       delBtn.addEventListener("click", () => {
         if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
           delBtn.disabled = true;
-          apiPost("cancelarCita", { id: a.id })
-            .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
+          deleteDoc(doc(db, "citas", a.id))
+            .then(() => {
+              apiPost("cancelarCita", { id: a.id }).catch(() => {});
+            })
             .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); delBtn.disabled = false; });
         }
       });
@@ -1441,8 +1620,10 @@ document.getElementById("listaCitas").addEventListener("change", (e) => {
   const id = e.target.dataset.id;
   const val = e.target.value;
   e.target.disabled = true;
-  apiPost("actualizarEstado", { id: id, status: val })
-    .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
+  updateDoc(doc(db, "citas", id), { status: val })
+    .then(() => {
+      apiPost("actualizarEstado", { id: id, status: val }).catch(() => {});
+    })
     .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
 });
 
@@ -1495,14 +1676,13 @@ document.getElementById("btnBloquear").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Bloqueando…";
 
-  apiPost("bloquearDia", { date: dateStr, reason: motivo })
-    .then((res) => {
+  setDoc(doc(db, "bloqueosDias", dateStr), { date: dateStr, reason: motivo })
+    .then(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear día";
-      if(!res.ok){ alert(res.message || "No se pudo bloquear el día."); return; }
       bloqueoFecha.value = "";
       document.getElementById("bloqueoMotivo").value = "";
-      refreshDataFromServer(refreshBarberPanel, null, true);
+      apiPost("bloquearDia", { date: dateStr, reason: motivo }).catch(() => {});
     })
     .catch(() => {
       btn.disabled = false;
@@ -1535,8 +1715,10 @@ function renderBloqueos(){
     unBtn.textContent = "Desbloquear";
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
-      apiPost("desbloquearDia", { date: b.date })
-        .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
+      deleteDoc(doc(db, "bloqueosDias", b.date))
+        .then(() => {
+          apiPost("desbloquearDia", { date: b.date }).catch(() => {});
+        })
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);
@@ -1588,15 +1770,15 @@ document.getElementById("btnBloquearHora").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Bloqueando…";
 
-  apiPost("bloquearHora", { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
-    .then((res) => {
+  const horaId = `${dateStr}_${Number(minutes)}`;
+  setDoc(doc(db, "bloqueosHoras", horaId), { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
+    .then(() => {
       btn.disabled = false;
       btn.textContent = "Bloquear hora";
-      if(!res.ok){ alert(res.message || "No se pudo bloquear esa hora."); return; }
       bloqueoHoraFecha.value = "";
       bloqueoHoraSelect.innerHTML = '<option value="">Elige una fecha primero</option>';
       document.getElementById("bloqueoHoraMotivo").value = "";
-      refreshDataFromServer(refreshBarberPanel, null, true);
+      apiPost("bloquearHora", { date: dateStr, minutes: Number(minutes), time: time, reason: motivo }).catch(() => {});
     })
     .catch(() => {
       btn.disabled = false;
@@ -1629,8 +1811,10 @@ function renderHorasBloqueadas(){
     unBtn.textContent = "Desbloquear";
     unBtn.addEventListener("click", () => {
       unBtn.disabled = true;
-      apiPost("desbloquearHora", { date: h.date, minutes: h.minutes })
-        .then(() => refreshDataFromServer(refreshBarberPanel, null, true))
+      deleteDoc(doc(db, "bloqueosHoras", h.id))
+        .then(() => {
+          apiPost("desbloquearHora", { date: h.date, minutes: h.minutes }).catch(() => {});
+        })
         .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); unBtn.disabled = false; });
     });
     item.appendChild(unBtn);
@@ -1806,7 +1990,9 @@ function renderSocial(){
    ARRANQUE
    ========================================================= */
 resetClientView();
-refreshDataFromServer(); // trae los datos apenas carga la página
+// Los datos de citas/bloqueos ya no se piden manualmente: arrancan
+// solos (ver iniciarEscuchaFirestore) en cuanto Firebase confirma la
+// sesión, dentro de onAuthStateChanged.
 renderGaleria();
 renderSocial();
 

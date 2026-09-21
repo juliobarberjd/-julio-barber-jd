@@ -593,18 +593,6 @@
 
     <div id="panelBarbero" style="display:none;">
 
-      <div class="card" id="migracionCard" style="border-color:var(--brass);">
-        <h2 style="font-size:16px;">⚠️ Migración única a Firestore</h2>
-        <div style="font-size:12.5px; color:var(--cream-dim); margin-bottom:10px;">
-          Úsalo UNA sola vez: copia todo lo que ya está en tu Google Sheet
-          (citas, días y horas bloqueadas) hacia Firestore, para que nada
-          quede como "libre" por error. Después de usarlo, borra esta
-          tarjeta del código.
-        </div>
-        <button class="secondary" id="btnMigrar">Migrar historial del Sheet a Firestore</button>
-        <div id="migracionEstado" style="font-size:12.5px; margin-top:8px;"></div>
-      </div>
-
       <div class="sync-row">
         <span><span class="sync-dot" id="syncDot"></span><span id="syncText">Al día</span></span>
         <button id="btnRefrescar">Actualizar ahora</button>
@@ -618,6 +606,9 @@
 
       <div class="card">
         <h2>Resumen de citas <span class="tag">Barbero</span></h2>
+        <label for="filtroFechaCitas">Ver las citas de este día</label>
+        <input type="date" id="filtroFechaCitas">
+        <button class="secondary" id="btnVerTodasCitas" style="margin-bottom:10px;">Ver todas (sin filtro)</button>
         <div id="listaCitas"></div>
       </div>
 
@@ -684,7 +675,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, collection, onSnapshot,
-  runTransaction, updateDoc, deleteDoc, writeBatch, getDocs
+  runTransaction, updateDoc, deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
@@ -1416,89 +1407,6 @@ document.getElementById("btnRefrescar").addEventListener("click", () => {
   refreshBarberPanel();
 });
 
-/* =========================================================
-   MIGRACIÓN ÚNICA: copia lo que ya hay en el Sheet hacia Firestore
-   (bórrala del código después de usarla una vez)
-   ========================================================= */
-document.getElementById("btnMigrar").addEventListener("click", () => {
-  const btn = document.getElementById("btnMigrar");
-  const estado = document.getElementById("migracionEstado");
-
-  if(!confirm("Esto copia TODO lo que hay en tu Google Sheet hacia Firestore. Solo deberías hacerlo una vez. ¿Continuar?")) return;
-
-  btn.disabled = true;
-  estado.textContent = "Leyendo la Hoja de Google (puede tardar un poco con muchos registros)…";
-
-  apiGet("getData")
-    .then((data) => {
-      const citas = data.citas || [];
-      const bloqueos = data.bloqueos || [];
-      const horasBloqueadas = data.horasBloqueadas || [];
-      const total = citas.length + bloqueos.length + horasBloqueadas.length;
-
-      if(total === 0){
-        estado.textContent = "No había nada en la Hoja para migrar.";
-        btn.disabled = false;
-        return;
-      }
-
-      const operaciones = [];
-      citas.forEach(c => {
-        const id = `${c.date}_${c.minutes}`;
-        operaciones.push({ ref: doc(db, "citas", id), data: {
-          date: c.date, minutes: Number(c.minutes), time: c.time, name: c.name,
-          phone: c.phone, email: c.email || "", status: c.status || "pendiente",
-          createdAt: c.createdAt || new Date().toISOString()
-        }});
-      });
-      bloqueos.forEach(b => {
-        operaciones.push({ ref: doc(db, "bloqueosDias", b.date), data: { date: b.date, reason: b.reason || "" } });
-      });
-      horasBloqueadas.forEach(h => {
-        const id = `${h.date}_${h.minutes}`;
-        operaciones.push({ ref: doc(db, "bloqueosHoras", id), data: {
-          date: h.date, minutes: Number(h.minutes), time: h.time, reason: h.reason || ""
-        }});
-      });
-
-      return migrarPorLotes(operaciones, estado);
-    })
-    .then(() => {
-      estado.textContent = "✅ Migración terminada. Ya puedes borrar esta tarjeta del código.";
-      btn.disabled = false;
-    })
-    .catch((err) => {
-      estado.textContent = "❌ Algo falló: " + (err && err.message ? err.message : err);
-      btn.disabled = false;
-    });
-});
-
-// Escribe en Firestore de a 500 (el máximo por lote), y si una ráfaga
-// tan grande dispara un error temporal de cuota, espera un poco y
-// reintenta ese mismo lote antes de rendirse.
-function migrarPorLotes(operaciones, estado, intento){
-  intento = intento || 0;
-  if(operaciones.length === 0) return Promise.resolve();
-
-  const lote = operaciones.slice(0, 500);
-  const resto = operaciones.slice(500);
-
-  const batch = writeBatch(db);
-  lote.forEach(op => batch.set(op.ref, op.data));
-
-  estado.textContent = `Migrando… quedan ${operaciones.length} registro(s).`;
-
-  return batch.commit()
-    .then(() => migrarPorLotes(resto, estado))
-    .catch((err) => {
-      if(err && err.code === "resource-exhausted" && intento < 3){
-        return new Promise(resolve => setTimeout(resolve, 2000))
-          .then(() => migrarPorLotes(operaciones, estado, intento + 1));
-      }
-      throw err;
-    });
-}
-
 // Avisa con sonido + notificación del navegador cuando aparece una cita nueva
 // mientras tienes el panel abierto (el correo llega igual, esto es un plus).
 let lastKnownCitasCount = null;
@@ -1563,10 +1471,20 @@ function renderListaCitas(){
 
   // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada).
   // Lo ya realizado se archiva y se consulta desde "Buscar histórico".
-  const citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
+  let citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
+
+  // Filtro por día: por defecto solo se ve el día elegido (hoy al
+  // entrar), para no mostrar de un solo golpe todo lo que hay
+  // pendiente. Si el barbero le da "Ver todas", se quita el filtro.
+  const filtroFecha = filtroFechaCitas.value;
+  if(filtroFecha){
+    citasActivas = citasActivas.filter(a => a.date === filtroFecha);
+  }
 
   if(citasActivas.length === 0){
-    wrap.innerHTML = '<div class="empty">No hay citas pendientes por atender. Lo ya realizado lo puedes ver en "Buscar histórico".</div>';
+    wrap.innerHTML = filtroFecha
+      ? `<div class="empty">No hay citas pendientes para el ${prettyDate(filtroFecha)}.</div>`
+      : '<div class="empty">No hay citas pendientes por atender. Lo ya realizado lo puedes ver en "Buscar histórico".</div>';
     return;
   }
 
@@ -1625,6 +1543,20 @@ document.getElementById("listaCitas").addEventListener("change", (e) => {
       apiPost("actualizarEstado", { id: id, status: val }).catch(() => {});
     })
     .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
+});
+
+/* --- Filtro por fecha en "Resumen de citas" --- */
+const filtroFechaCitas = document.getElementById("filtroFechaCitas");
+filtroFechaCitas.min = todayStr();
+filtroFechaCitas.value = todayStr(); // al entrar, muestra el día de hoy
+
+filtroFechaCitas.addEventListener("change", () => {
+  renderListaCitas();
+});
+
+document.getElementById("btnVerTodasCitas").addEventListener("click", () => {
+  filtroFechaCitas.value = "";
+  renderListaCitas();
 });
 
 /* --- Disponibilidad por fecha --- */

@@ -1314,6 +1314,15 @@ btnReservar.addEventListener("click", () => {
       confirmCard.style.display = "block";
       confirmCard.scrollIntoView({behavior:"smooth", block:"start"});
 
+      // Importante: como la cita que ACABAMOS de crear también llega
+      // por la escucha en vivo de Firestore (onSnapshot), sin esto la
+      // app "reaccionaría" a su propio cambio y volvería a dibujar la
+      // pantalla de elegir día/hora encima de la de confirmación —
+      // dando la sensación de que el botón de WhatsApp "entra y sale".
+      // Al vaciar la fecha, esa actualización en vivo ya no toca esta
+      // pantalla (ver onDatosActualizados).
+      fechaInput.value = "";
+
       // Copia de respaldo hacia la Hoja de Google (correos + historial),
       // EN SEGUNDO PLANO: si esto falla, no le afecta nada al cliente,
       // su cita ya quedó guardada arriba, en Firestore.

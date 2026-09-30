@@ -218,6 +218,42 @@
   .slot.taken{background:transparent; color:#584d43; border-style:dashed; text-decoration:line-through; cursor:not-allowed;}
   .slot.past{opacity:0.45; text-decoration:underline; border-style:dotted; cursor:not-allowed;}
 
+  /* ===== Tira de días (selector de fecha deslizable) ===== */
+  .strip-head{
+    display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+    margin:0 0 8px;
+  }
+  .strip-head label{margin:0;}
+  .strip-month{font-size:11px; color:var(--cream-dim); text-transform:capitalize; white-space:nowrap;}
+  .day-strip{
+    display:flex; gap:8px; overflow-x:auto; padding:2px 2px 10px;
+    scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin; scrollbar-color:var(--line) transparent;
+  }
+  .day-strip::-webkit-scrollbar{height:4px;}
+  .day-strip::-webkit-scrollbar-thumb{background:var(--line); border-radius:10px;}
+  .day-chip{
+    -webkit-appearance:none; appearance:none; font:inherit;
+    flex:0 0 68px; display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:10px 4px 9px; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel-2); color:var(--cream);
+    cursor:pointer; scroll-snap-align:start;
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .day-chip .dc-dow{
+    font-size:10px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--cream-dim); font-weight:600;
+  }
+  .day-chip .dc-num{font-family:'Bebas Neue',system-ui,sans-serif; font-size:28px; line-height:1;}
+  .day-chip .dc-info{font-size:10px; font-weight:700; color:var(--cream-dim); white-space:nowrap;}
+  .day-chip.has-items .dc-info{color:var(--cream);}
+  .day-chip.is-selected{border-color:var(--brass); background:rgba(205,164,62,0.14);}
+  .day-chip.is-selected .dc-num{color:var(--brass-bright);}
+  .day-chip.is-off{opacity:0.45; cursor:not-allowed;}
+  .day-chip.is-closed .dc-info{color:#e79c86;}
+  .day-chip:focus-visible{outline:2px solid var(--brass-bright); outline-offset:2px;}
+  @media (prefers-reduced-motion: reduce){ .day-chip{transition:none;} }
+
   button.primary{
     width:100%; padding:15px; margin-top:16px; border:none; border-radius:10px;
     background:linear-gradient(180deg, var(--brass-bright), var(--brass));
@@ -485,8 +521,12 @@
     <div class="card locked" id="reservaCard">
       <h2>Reservar cita <span class="tag">Cliente</span></h2>
 
-      <label for="fecha">Elige el día</label>
-      <input type="date" id="fecha" autocomplete="off" disabled>
+      <div class="strip-head">
+        <label>Elige el día</label>
+        <span class="strip-month" id="mesCliente"></span>
+      </div>
+      <input type="hidden" id="fecha" disabled>
+      <div class="day-strip" id="stripCliente" role="group" aria-label="Días para reservar"></div>
       <div id="diaInfo" class="day-note" style="display:none;"></div>
       <div id="cerradoMsg" class="closed-msg" style="display:none;"></div>
 
@@ -607,8 +647,12 @@
 
       <div class="card">
         <h2>Resumen de citas <span class="tag">Barbero</span></h2>
-        <label for="filtroFechaCitas">Ver las citas de este día</label>
-        <input type="date" id="filtroFechaCitas">
+        <div class="strip-head">
+          <label>Ver las citas de este día</label>
+          <span class="strip-month" id="mesBarbero"></span>
+        </div>
+        <input type="hidden" id="filtroFechaCitas">
+        <div class="day-strip" id="stripBarbero" role="group" aria-label="Días con citas"></div>
         <button class="secondary" id="btnVerTodasCitas" style="margin-bottom:10px;">Ver todas (sin filtro)</button>
         <div id="listaCitas"></div>
       </div>
@@ -1024,6 +1068,7 @@ function detenerEscuchaFirestore(){
 }
 
 function onDatosActualizados(){
+  renderStripCliente();
   if(fechaInput && fechaInput.value){
     renderClientDay();
   }
@@ -1188,12 +1233,10 @@ function resetClientView(){
   diaInfo.style.display = "none";
   cerradoMsg.style.display = "none";
   if(currentUser && currentProfile) applyProfileToForm();
+  renderStripCliente();
 }
 window.addEventListener("pageshow", resetClientView);
 
-fechaInput.addEventListener("change", () => {
-  renderClientDay();
-});
 
 function renderClientDay(){
   const dateStr = fechaInput.value;
@@ -1232,7 +1275,7 @@ function renderClientDay(){
       horarioTexto += ` (descanso de ${minutesToLabel(sched.blocks[0].end)} a ${minutesToLabel(sched.blocks[1].start)})`;
     }
   }
-  diaInfo.textContent = `${DIAS[day]} · horario de atención: ${horarioTexto}`;
+  diaInfo.textContent = `${prettyDate(dateStr)} · horario de atención: ${horarioTexto}`;
 
   if(blocked){
     cerradoMsg.style.display = "block";
@@ -1275,6 +1318,137 @@ function renderSlots(dateStr){
     slotsDiv.appendChild(btn);
   });
 }
+
+/* =========================================================
+   TIRA DE DÍAS (se ve siempre un mes, desde HOY)
+   ---------------------------------------------------------
+   Cada vez que cambia el día, la tira arranca sola desde el día
+   nuevo: no hay que tocar nada.
+   ========================================================= */
+const DIAS_VISIBLES = 31;
+const stripCliente = document.getElementById("stripCliente");
+const stripBarbero = document.getElementById("stripBarbero");
+
+function diasDelMes(){
+  const base = dateFromStr(todayStr());
+  const out = [];
+  for(let i = 0; i < DIAS_VISIBLES; i++){
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    out.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
+  }
+  return out;
+}
+
+function textoRangoMeses(dias){
+  const a = dateFromStr(dias[0]), b = dateFromStr(dias[dias.length - 1]);
+  if(a.getMonth() === b.getMonth()) return `${MESES[a.getMonth()]} ${a.getFullYear()}`;
+  if(a.getFullYear() === b.getFullYear()) return `${MESES_ABREV[a.getMonth()]} – ${MESES_ABREV[b.getMonth()]} ${b.getFullYear()}`;
+  return `${MESES_ABREV[a.getMonth()]} ${a.getFullYear()} – ${MESES_ABREV[b.getMonth()]} ${b.getFullYear()}`;
+}
+
+// Horarios que un cliente todavía puede tomar ese día.
+function horariosLibres(dateStr){
+  const taken = new Set(OCUPADOS.filter(o => o.date === dateStr).map(o => Number(o.minutes)));
+  const bloqueadas = new Set(HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => Number(h.minutes)));
+  const isToday = dateStr === todayStr();
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  return generateSlots(dateStr).filter(m =>
+    !taken.has(m) && !bloqueadas.has(m) && !(isToday && m <= nowMinutes)
+  );
+}
+
+function infoDiaCliente(dateStr){
+  if(!dataLoaded) return { texto: "…" };
+  const slots = generateSlots(dateStr);
+  if(isBlocked(dateStr) || slots.length === 0) return { texto: "Cerrado", off: true, clase: "is-closed" };
+  const libres = horariosLibres(dateStr).length;
+  if(libres > 0) return { texto: `${libres} ${libres === 1 ? "libre" : "libres"}`, clase: "has-items" };
+  // Hoy, cuando ya pasaron todos los turnos, el día quedó cerrado.
+  if(dateStr === todayStr()){
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    if(slots.every(m => m <= nowMinutes)) return { texto: "Cerrado", off: true, clase: "is-closed" };
+  }
+  return { texto: "Lleno", off: true };
+}
+
+function infoDiaBarbero(dateStr){
+  const n = CITAS.filter(a => a.date === dateStr).length;
+  const cerrado = isBlocked(dateStr) || generateSlots(dateStr).length === 0;
+  if(n > 0) return { texto: `${n} ${n === 1 ? "cita" : "citas"}`, clase: "has-items" };
+  if(cerrado) return { texto: "Cerrado", clase: "is-closed" };
+  return { texto: "Sin citas" };
+}
+
+function crearChip(dateStr, info, seleccionado, onPick){
+  const d = dateFromStr(dateStr);
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "day-chip"
+    + (seleccionado ? " is-selected" : "")
+    + (info.off ? " is-off" : "")
+    + (info.clase ? " " + info.clase : "");
+  b.dataset.date = dateStr;
+  b.disabled = !!info.off;
+  b.setAttribute("aria-pressed", seleccionado ? "true" : "false");
+  b.setAttribute("aria-label", `${prettyDate(dateStr)}: ${info.texto}`);
+  b.innerHTML =
+    `<span class="dc-dow">${dateStr === todayStr() ? "Hoy" : DIAS_ABREV[d.getDay()]}</span>` +
+    `<span class="dc-num">${d.getDate()}</span>` +
+    `<span class="dc-info">${info.texto}</span>`;
+  if(!info.off) b.addEventListener("click", () => onPick(dateStr, b));
+  return b;
+}
+
+// Redibuja una tira sin perder la posición a la que el usuario deslizó.
+function dibujarTira(contenedor, mesEl, seleccion, infoFn, onPick){
+  const scroll = contenedor.scrollLeft;
+  const dias = diasDelMes();
+  contenedor.innerHTML = "";
+  dias.forEach(ds => contenedor.appendChild(crearChip(ds, infoFn(ds), ds === seleccion, onPick)));
+  contenedor.scrollLeft = scroll;
+  if(mesEl) mesEl.textContent = textoRangoMeses(dias);
+}
+
+function centrarChip(contenedor, chip){
+  const destino = chip.offsetLeft - (contenedor.clientWidth - chip.offsetWidth) / 2;
+  const suave = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  contenedor.scrollTo({ left: Math.max(0, destino), behavior: suave ? "smooth" : "auto" });
+}
+
+function renderStripCliente(){
+  dibujarTira(stripCliente, document.getElementById("mesCliente"), fechaInput.value, infoDiaCliente,
+    (dateStr) => {
+      fechaInput.value = dateStr;
+      renderStripCliente();
+      const chip = stripCliente.querySelector(`[data-date="${dateStr}"]`);
+      if(chip) centrarChip(stripCliente, chip);
+      renderClientDay();
+    });
+}
+
+function renderStripBarbero(){
+  dibujarTira(stripBarbero, document.getElementById("mesBarbero"), filtroFechaCitas.value, infoDiaBarbero,
+    (dateStr) => {
+      filtroFechaCitas.value = dateStr;
+      renderStripBarbero();
+      const chip = stripBarbero.querySelector(`[data-date="${dateStr}"]`);
+      if(chip) centrarChip(stripBarbero, chip);
+      renderListaCitas();
+    });
+}
+
+// En computador, la rueda del mouse también desliza la tira de lado.
+[stripCliente, stripBarbero].forEach(el => {
+  el.addEventListener("wheel", (e) => {
+    if(Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth){
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+  }, { passive: false });
+});
 
 function updateButtonState(){
   btnReservar.disabled = !(
@@ -1347,6 +1521,7 @@ btnReservar.addEventListener("click", () => {
       // Se vacía la fecha para que la actualización en vivo de nuestra
       // propia cita no redibuje la pantalla de horarios encima de esta.
       fechaInput.value = "";
+      renderStripCliente();
 
       // Copia a la Hoja de Google + correos, en segundo plano.
       apiPost("crearCita", { id: citaId }).catch(() => {});
@@ -1471,6 +1646,7 @@ function refreshBarberPanel(){
   if(!barberUnlocked) return;
   checkForNewCitas();
   renderStats();
+  renderStripBarbero();
   renderListaCitas();
   renderBloqueos();
   renderHorasBloqueadas();
@@ -1578,12 +1754,9 @@ const filtroFechaCitas = document.getElementById("filtroFechaCitas");
 filtroFechaCitas.min = todayStr();
 filtroFechaCitas.value = todayStr();
 
-filtroFechaCitas.addEventListener("change", () => {
-  renderListaCitas();
-});
-
 document.getElementById("btnVerTodasCitas").addEventListener("click", () => {
   filtroFechaCitas.value = "";
+  renderStripBarbero();
   renderListaCitas();
 });
 
@@ -1954,6 +2127,36 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+/* =========================================================
+   RELOJ: las tiras avanzan solas con los días
+   ---------------------------------------------------------
+   Cada minuto (y cada vez que vuelves a abrir la app) se
+   recalculan los horarios libres de hoy. Si cambió el día,
+   la tira arranca desde el día nuevo.
+   ========================================================= */
+let diaActual = todayStr();
+function tickDelReloj(){
+  const hoy = todayStr();
+  if(hoy !== diaActual){
+    diaActual = hoy;
+    [fechaInput, filtroFechaCitas, fechaConsulta, bloqueoFecha].forEach(el => { el.min = hoy; });
+    if(fechaInput.value && fechaInput.value < hoy){
+      fechaInput.value = "";
+      renderClientDay();
+    }
+    if(filtroFechaCitas.value && filtroFechaCitas.value < hoy){
+      filtroFechaCitas.value = hoy;
+    }
+    if(barberUnlocked) refreshBarberPanel();
+  }
+  renderStripCliente();
+  if(barberUnlocked) renderStripBarbero();
+}
+setInterval(tickDelReloj, 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") tickDelReloj();
+});
 
 const btnPreciosWhatsapp = document.getElementById("btnPreciosWhatsapp");
 if (btnPreciosWhatsapp) {

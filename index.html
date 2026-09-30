@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#151210">
 <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="JULIO BARBER JD">
@@ -453,9 +454,9 @@
 
     <div id="authRegisterFields" style="display:none;">
       <label for="regNombre">Tu nombre</label>
-      <input type="text" id="regNombre" placeholder="Ej: Juan Pérez" autocomplete="name">
+      <input type="text" id="regNombre" placeholder="Ej: Juan Pérez" autocomplete="name" maxlength="60">
       <label for="regCelular">Tu celular</label>
-      <input type="tel" id="regCelular" placeholder="Ej: 300 123 4567" autocomplete="tel">
+      <input type="tel" id="regCelular" placeholder="Ej: 300 123 4567" autocomplete="tel" maxlength="20">
       <label for="regEmail">Correo electrónico</label>
       <input type="text" id="regEmail" placeholder="tu@correo.com" autocomplete="email">
       <label for="regPass">Contraseña</label>
@@ -496,9 +497,9 @@
 
       <div id="formWrap" style="display:none;">
         <label for="nombre">Tu nombre</label>
-        <input type="text" id="nombre" placeholder="Ej: Juan Pérez" autocomplete="off">
+        <input type="text" id="nombre" placeholder="Ej: Juan Pérez" autocomplete="off" maxlength="60">
         <label for="celular">Tu celular</label>
-        <input type="tel" id="celular" placeholder="Ej: 300 123 4567" autocomplete="off">
+        <input type="tel" id="celular" placeholder="Ej: 300 123 4567" autocomplete="off" maxlength="20">
         <button class="primary" id="btnReservar" disabled>Confirmar cita</button>
       </div>
     </div>
@@ -675,53 +676,42 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, collection, onSnapshot,
-  runTransaction, updateDoc, deleteDoc
+  runTransaction, updateDoc, deleteDoc, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
    CONFIGURACIÓN
    ========================================================= */
-// PEGA AQUÍ el link de tu Apps Script que termina en /exec
-// (Extensiones > Apps Script > Implementar > Gestionar implementaciones > Copiar)
+// Link de tu Apps Script que termina en /exec
 const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxtKuaQibWOL3sz72DfA7XTSa3jCzxFRQtKBu9wllt4kT23EtWthW15AbcYEQSfADh3/exec";
 
 // Tu número de WhatsApp con indicativo de país, sin espacios ni el signo +.
-// Colombia (57) + el número que diste: 3104198269
 const BARBER_WHATSAPP = "573104198269";
 
-const BARBER_PIN = "2345"; // Cambia este PIN por el que prefieras
-// El correo con el que TÚ (el barbero) inicias sesión en la app.
-// Debe ser exactamente el mismo correo con el que creaste tu cuenta
-// aquí mismo (botón "Iniciar sesión"), y el mismo que pusiste en las
-// reglas de seguridad de Firestore. Si no coincide, el panel no va a
-// poder guardar cambios.
+// El PIN es solo una "puerta" visual. La seguridad real la dan las
+// reglas de Firestore: aunque alguien vea este PIN, sin iniciar
+// sesión con el correo del barbero no puede ver ni cambiar nada.
+const BARBER_PIN = "2345";
 const BARBER_EMAIL = "juliobarberjd@gmail.com";
 const STEP = 40; // minutos entre citas
 
 // ---- GALERÍA DE FOTOS ----
-// Sube tus fotos a la carpeta "fotos" del repositorio de GitHub con estos
-// nombres EXACTOS y en orden: foto1.jpg, foto2.jpg, foto3.jpg... sin
-// saltarte números. Si una foto no existe todavía, simplemente no se
-// muestra: no rompe nada.
-//
-// Para agregar MÁS fotos de las que ya tienes (no hay límite): solo sube
-// el siguiente archivo numerado (ej. foto41.jpg si ya llegabas a 40) Y
-// sube también el número de aquí abajo para que la app sepa que existe.
+// Sube tus fotos a la carpeta "fotos" del repositorio con nombres
+// foto1.jpg, foto2.jpg, foto3.jpg... en orden. Para agregar más,
+// sube el siguiente archivo numerado y aumenta este número.
 const CANTIDAD_FOTOS = 40;
 const GALERIA_FOTOS = Array.from({length: CANTIDAD_FOTOS}, (_, i) => `fotos/foto${i + 1}.jpg`);
+
 // ---- REDES SOCIALES ----
-// Pega aquí los links de tus redes. Deja el texto vacío ("") en la que no
-// quieras mostrar y ese ícono simplemente no aparece.
+// Deja el texto vacío ("") en la red que no quieras mostrar.
 const SOCIAL_LINKS = {
   facebook: "https://www.facebook.com/share/1Jf3D8g3ta/",
   instagram: "https://www.instagram.com/julio__barber_shoop?igsi=MzI5aWhlcDVidXM3",
   tiktok: "https://www.tiktok.com/@julio.barber.jd?_r=1&_t=ZS-99TBqoi7pA7"
 };
 
-// Configuración de tu proyecto de Firebase (login de clientes)
-// PEGA AQUÍ los datos de TU PROPIO proyecto de Firebase (uno nuevo,
-// separado del de la otra barbería). Los obtienes en:
-// Firebase Console > Configuración del proyecto > "Tus apps" > SDK setup and configuration
+// Configuración de Firebase (estos datos son públicos por diseño;
+// lo que protege la información son las reglas de Firestore).
 const firebaseConfig = {
   apiKey: "AIzaSyC5HYpBdlzu2QpZF_louTdlZHgVh2PYvqU",
   authDomain: "julio-barber-jd.firebaseapp.com",
@@ -735,27 +725,17 @@ const auth = getAuth(fbApp);
 const db = getFirestore(fbApp);
 
 const SCHEDULE = {
-  // Lunes:
-  //  · Mañana: 10:00am - 12:00pm (última cita), receso hasta 3:00pm
-  //  · Tarde:  3:00pm - 9:00pm (última cita completa cae justo en 9:00pm)
+  // Lunes: 10:00am-12:00pm y 3:00pm-9:00pm
   1: {blocks: [{start: 10*60, end: 12*60}, {start: 15*60, end: 21*60}]},
-  // Martes, miércoles y jueves:
-  //  · Mañana: 10:00am - 12:00pm (última cita), receso hasta 3:00pm
-  //  · Tarde:  3:00pm - 8:00pm (última cita completa cae en 7:40pm)
+  // Martes a jueves: 10:00am-12:00pm y 3:00pm-8:00pm
   2: {blocks: [{start: 10*60, end: 12*60}, {start: 15*60, end: 20*60}]},
   3: {blocks: [{start: 10*60, end: 12*60}, {start: 15*60, end: 20*60}]},
   4: {blocks: [{start: 10*60, end: 12*60}, {start: 15*60, end: 20*60}]},
-  // Viernes: como el sábado, pero entrando a las 10:00am y con receso de 1:00pm a 3:00pm
-  //  · Mañana: 10:00am - 1:00pm (última cita cae en 12:40pm)
-  //  · Tarde:  3:00pm - 10:00pm (última cita completa cae en 9:40pm)
+  // Viernes: 10:00am-1:00pm y 3:00pm-10:00pm
   5: {blocks: [{start: 10*60, end: 13*60}, {start: 15*60, end: 22*60}]},
-  // Sábado:
-  //  · Mañana: 8:00am - 1:00pm (última cita cae en 12:40pm), receso 1:20pm-2:00pm
-  //  · Tarde:  2:00pm - 10:00pm (última cita cae justo en 10:00pm)
+  // Sábado: 8:00am-1:00pm y 2:00pm-10:00pm
   6: {blocks: [{start: 8*60, end: 13*60}, {start: 14*60, end: 22*60}]},
-  // Domingo: como el sábado, pero la tarde cierra a las 9:00pm en vez de 10:00pm
-  //  · Mañana: 8:00am - 1:00pm (última cita cae en 12:40pm), receso 1:20pm-2:00pm
-  //  · Tarde:  2:00pm - 9:00pm (última cita completa cae en 8:40pm)
+  // Domingo: 8:00am-1:00pm y 2:00pm-9:00pm
   0: {blocks: [{start: 8*60, end: 13*60}, {start: 14*60, end: 21*60}]},
 };
 
@@ -769,6 +749,11 @@ const MESES_ABREV = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct"
    ========================================================= */
 let currentUser = null;
 let currentProfile = null; // {name, phone, email}
+
+function esBarbero(){
+  return !!(currentUser && currentUser.email &&
+            currentUser.email.toLowerCase() === BARBER_EMAIL.toLowerCase());
+}
 
 const authBar = document.getElementById("authBar");
 const authModal = document.getElementById("authModal");
@@ -859,6 +844,11 @@ authSubmit.addEventListener("click", () => {
       authSubmit.disabled = false; authSubmit.textContent = original;
       return;
     }
+    if(celular.length < 7){
+      authError.textContent = "Escribe un número de celular válido.";
+      authSubmit.disabled = false; authSubmit.textContent = original;
+      return;
+    }
 
     createUserWithEmailAndPassword(auth, email, pass)
       .then((cred) => setDoc(doc(db, "clientes", cred.user.uid), { name: nombre, phone: celular, email: email }))
@@ -876,36 +866,33 @@ function friendlyAuthError(code){
     "auth/invalid-credential": "Correo o contraseña incorrectos.",
     "auth/email-already-in-use": "Ya existe una cuenta con ese correo. Inicia sesión.",
     "auth/weak-password": "La contraseña debe tener al menos 6 caracteres.",
-    "auth/unauthorized-domain": "Este sitio todavía no está autorizado en Firebase."
+    "auth/unauthorized-domain": "Este sitio todavía no está autorizado en Firebase.",
+    "auth/too-many-requests": "Demasiados intentos. Espera unos minutos e intenta de nuevo."
   };
   return map[code] || "Ocurrió un error. Intenta de nuevo.";
 }
 
 onAuthStateChanged(auth, (user) => {
+  // Si cambió de cuenta, cerramos las escuchas de la cuenta anterior
+  // (por ejemplo, el barbero sale y entra un cliente en el mismo celular).
+  detenerEscuchaFirestore();
   currentUser = user;
   if(user){
     getDoc(doc(db, "clientes", user.uid)).then((snap) => {
       currentProfile = snap.exists() ? snap.data() : { name: "", phone: "", email: user.email };
       renderAuthBar();
       applyProfileToForm();
-    }).catch((err) => {
-      // Si Firestore rechaza la lectura (p.ej. reglas de seguridad mal
-      // configuradas), igual dejamos al cliente reservar: solo no le
-      // llenamos el nombre/celular automáticamente, los escribe a mano.
+    }).catch(() => {
       currentProfile = { name: "", phone: "", email: user.email };
       renderAuthBar();
       applyProfileToForm();
     });
-    // Con sesión iniciada, las reglas de Firestore ya permiten leer
-    // citas/bloqueos — arrancamos las escuchas en tiempo real.
     iniciarEscuchaFirestore();
-    // Si el barbero ya tenía el PIN puesto y estaba esperando a que
-    // iniciara sesión con su correo, esto termina de abrirle el panel.
     intentarAbrirPanelBarbero();
   }else{
     currentProfile = null;
     renderAuthBar();
-    detenerEscuchaFirestore();
+    if(barberUnlocked) cerrarPanelBarbero();
   }
 });
 
@@ -920,8 +907,7 @@ function renderAuthBar(){
   updateClientGate();
 }
 
-// El login es obligatorio para reservar: mientras no haya sesión, se muestra
-// la tarjeta de "Inicia sesión para reservar" en vez del formulario.
+// El login es obligatorio para reservar.
 function updateClientGate(){
   const gate = document.getElementById("authGateCard");
   const reserva = document.getElementById("reservaCard");
@@ -948,92 +934,125 @@ function applyProfileToForm(){
   }
 }
 
-// Botón inicial (antes de que Firebase confirme si hay sesión activa)
 document.getElementById("btnAuthOpen").addEventListener("click", () => openAuthModal("login"));
 
 /* =========================================================
-   ESTADO EN MEMORIA (ahora en vivo desde Firestore)
+   ESTADO EN MEMORIA (en vivo desde Firestore)
+   ---------------------------------------------------------
+   OCUPADOS: solo fecha + hora de cada turno tomado, SIN datos
+             personales. Es lo único que ven los clientes.
+   CITAS:    datos completos (nombre, celular, correo). Solo se
+             descargan si quien inició sesión es el barbero.
    ========================================================= */
 let CITAS = [];
+let OCUPADOS = [];
 let BLOQUEOS = [];
 let HORAS_BLOQUEADAS = [];
 let dataLoaded = false;
+let dataError = false;
+let citasCargadas = false;
+
+function slotId(dateStr, minutes){ return `${dateStr}_${Number(minutes)}`; }
 
 /* =========================================================
    RESPALDO EN GOOGLE SHEETS (Apps Script) — NO BLOQUEANTE
    ---------------------------------------------------------
-   Estas dos funciones solo se usan para mandar una COPIA de cada
-   acción hacia la Hoja de Google (para los correos y el historial).
-   Nunca se esperan antes de mostrarle algo al cliente ni al barbero:
-   si fallan o tardan, no le afecta nada a lo que ya quedó guardado
-   en Firestore.
+   Cada petición va con el token de sesión de Firebase, para
+   que el Apps Script sepa quién la hace y rechace a extraños.
    ========================================================= */
-function apiGet(action){
-  return fetch(WEBAPP_URL + "?action=" + encodeURIComponent(action))
-    .then(function(r){ return r.json(); });
-}
-
-function apiPost(action, payload){
-  return fetch(WEBAPP_URL, {
+async function apiPost(action, payload){
+  if(!currentUser) throw new Error("SIN_SESION");
+  const idToken = await currentUser.getIdToken();
+  const r = await fetch(WEBAPP_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" }, // evita el preflight de CORS
-    body: JSON.stringify({ action: action, payload: payload })
-  }).then(function(r){ return r.json(); });
+    body: JSON.stringify({ action: action, payload: payload, idToken: idToken })
+  });
+  return r.json();
 }
 
 /* =========================================================
-   FIRESTORE — ESCUCHAS EN TIEMPO REAL (fuente de verdad)
-   ---------------------------------------------------------
-   En vez de "preguntar" cada tantos segundos (como se hacía antes
-   con Apps Script), nos conectamos UNA vez con onSnapshot y
-   Firestore nos avisa solo, al instante, cada vez que algo cambia
-   de verdad. Esto es lo que evita que la app se sienta "pegada".
+   FIRESTORE — ESCUCHAS EN TIEMPO REAL
    ========================================================= */
-let unsubCitas = null, unsubBloqueosDias = null, unsubBloqueosHoras = null;
+let unsubCitas = null, unsubOcupados = null, unsubBloqueosDias = null, unsubBloqueosHoras = null;
 
 function iniciarEscuchaFirestore(){
-  if(unsubCitas) return; // ya está escuchando, no dupliques la conexión
+  if(!unsubOcupados){
+    setSyncStatus("loading");
 
-  setSyncStatus("loading");
+    unsubOcupados = onSnapshot(collection(db, "ocupados"), (snap) => {
+      OCUPADOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      dataLoaded = true;
+      dataError = false;
+      setSyncStatus("ok");
+      onDatosActualizados();
+    }, () => {
+      dataError = true;
+      setSyncStatus("error");
+      onDatosActualizados();
+    });
 
-  unsubCitas = onSnapshot(collection(db, "citas"), (snap) => {
-    CITAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    dataLoaded = true;
-    setSyncStatus("ok");
-    onDatosActualizados();
-  }, (err) => {
-    setSyncStatus("error");
-  });
+    unsubBloqueosDias = onSnapshot(collection(db, "bloqueosDias"), (snap) => {
+      BLOQUEOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      onDatosActualizados();
+    }, () => setSyncStatus("error"));
 
-  unsubBloqueosDias = onSnapshot(collection(db, "bloqueosDias"), (snap) => {
-    BLOQUEOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    onDatosActualizados();
-  });
+    unsubBloqueosHoras = onSnapshot(collection(db, "bloqueosHoras"), (snap) => {
+      HORAS_BLOQUEADAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      onDatosActualizados();
+    }, () => setSyncStatus("error"));
+  }
 
-  unsubBloqueosHoras = onSnapshot(collection(db, "bloqueosHoras"), (snap) => {
-    HORAS_BLOQUEADAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    onDatosActualizados();
-  });
+  // Los datos personales de las citas solo se piden si es el barbero.
+  if(esBarbero() && !unsubCitas){
+    unsubCitas = onSnapshot(collection(db, "citas"), (snap) => {
+      CITAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      citasCargadas = true;
+      setSyncStatus("ok");
+      onDatosActualizados();
+    }, () => setSyncStatus("error"));
+  }
 }
 
 function detenerEscuchaFirestore(){
   if(unsubCitas){ unsubCitas(); unsubCitas = null; }
+  if(unsubOcupados){ unsubOcupados(); unsubOcupados = null; }
   if(unsubBloqueosDias){ unsubBloqueosDias(); unsubBloqueosDias = null; }
   if(unsubBloqueosHoras){ unsubBloqueosHoras(); unsubBloqueosHoras = null; }
-  CITAS = []; BLOQUEOS = []; HORAS_BLOQUEADAS = [];
-  dataLoaded = false;
+  CITAS = []; OCUPADOS = []; BLOQUEOS = []; HORAS_BLOQUEADAS = [];
+  dataLoaded = false; dataError = false; citasCargadas = false;
 }
 
-// Se llama cada vez que llega una actualización en vivo de Firestore.
-// Vuelve a dibujar solo lo que esté visible en este momento, sin
-// recargar la página ni pedirle nada al usuario.
 function onDatosActualizados(){
   if(fechaInput && fechaInput.value){
     renderClientDay();
   }
+  if(esBarbero()){
+    sincronizarOcupados();
+  }
   if(barberUnlocked){
     refreshBarberPanel();
   }
+}
+
+// Las citas creadas antes de esta versión no tenían su casilla en
+// "ocupados". Cuando el barbero abre la app, se crean solas las que
+// falten (solo de hoy en adelante), para que los clientes vean esos
+// horarios como ocupados.
+const ocupadosEnCurso = new Set();
+function sincronizarOcupados(){
+  if(!esBarbero() || !citasCargadas || !dataLoaded) return;
+  const hoy = todayStr();
+  const existentes = new Set(OCUPADOS.map(o => o.id));
+  CITAS.forEach(a => {
+    if(!a.date || a.date < hoy) return;
+    const id = slotId(a.date, a.minutes);
+    if(existentes.has(id) || ocupadosEnCurso.has(id)) return;
+    ocupadosEnCurso.add(id);
+    setDoc(doc(db, "ocupados", id), { date: a.date, minutes: Number(a.minutes) })
+      .catch(() => {})
+      .finally(() => ocupadosEnCurso.delete(id));
+  });
 }
 
 function setSyncStatus(state){
@@ -1172,8 +1191,6 @@ function resetClientView(){
 }
 window.addEventListener("pageshow", resetClientView);
 
-// Al cambiar la fecha, primero traemos los datos más recientes del Sheet
-// (para no mostrar un horario "libre" que alguien ya tomó hace un minuto).
 fechaInput.addEventListener("change", () => {
   renderClientDay();
 });
@@ -1188,6 +1205,12 @@ function renderClientDay(){
   cerradoMsg.style.display = "none";
 
   if(!dateStr) return;
+
+  if(dataError){
+    diaInfo.style.display = "block";
+    diaInfo.textContent = "No se pudo cargar la disponibilidad. Revisa tu conexión y recarga la página.";
+    return;
+  }
 
   if(!dataLoaded){
     diaInfo.style.display = "block";
@@ -1223,8 +1246,8 @@ function renderClientDay(){
 
 function renderSlots(dateStr){
   const allSlots = generateSlots(dateStr);
-  const taken = CITAS.filter(a => a.date === dateStr).map(a => a.minutes);
-  const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => h.minutes);
+  const taken = OCUPADOS.filter(o => o.date === dateStr).map(o => Number(o.minutes));
+  const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).map(h => Number(h.minutes));
 
   const isToday = dateStr === todayStr();
   const now = new Date();
@@ -1254,13 +1277,18 @@ function renderSlots(dateStr){
 }
 
 function updateButtonState(){
-  btnReservar.disabled = !(selectedSlot !== null && nombreInput.value.trim() && celularInput.value.trim());
+  btnReservar.disabled = !(
+    selectedSlot !== null &&
+    nombreInput.value.trim() &&
+    celularInput.value.trim().length >= 7
+  );
 }
 
 btnReservar.addEventListener("click", () => {
+  if(!currentUser) return;
   const dateStr = fechaInput.value;
   const minutes = selectedSlot;
-  const citaId = `${dateStr}_${minutes}`;
+  const citaId = slotId(dateStr, minutes);
 
   const cita = {
     date: dateStr,
@@ -1268,7 +1296,7 @@ btnReservar.addEventListener("click", () => {
     time: minutesToLabel(minutes),
     name: nombreInput.value.trim(),
     phone: celularInput.value.trim(),
-    email: currentUser ? currentUser.email : "",
+    email: currentUser.email,
     status: "pendiente",
     createdAt: new Date().toISOString()
   };
@@ -1277,23 +1305,25 @@ btnReservar.addEventListener("click", () => {
   btnReservar.textContent = "Guardando…";
 
   const citaRef = doc(db, "citas", citaId);
+  const ocupadoRef = doc(db, "ocupados", citaId);
   const diaRef = doc(db, "bloqueosDias", dateStr);
   const horaRef = doc(db, "bloqueosHoras", citaId);
 
-  // La reserva pasa por una transacción de Firestore: revisa que el
-  // turno, el día y la hora sigan libres, y crea la cita, todo como
-  // una sola operación atómica. Así, si dos personas le dan
-  // "Confirmar" casi al mismo tiempo por el mismo horario, solo una
-  // de las dos gana — la otra recibe el aviso de "ocupado" al instante.
+  // Transacción atómica: se revisa que el turno siga libre y se crean
+  // A LA VEZ la cita (privada) y su casilla en "ocupados" (pública).
+  // Si dos personas confirman el mismo horario al mismo tiempo, solo
+  // una gana. Las reglas de Firestore vuelven a revisar todo esto en
+  // el servidor, así que no se puede saltar desde el navegador.
   runTransaction(db, (transaction) => {
     return Promise.all([
-      transaction.get(citaRef),
+      transaction.get(ocupadoRef),
       transaction.get(diaRef),
       transaction.get(horaRef)
-    ]).then(([citaSnap, diaSnap, horaSnap]) => {
-      if(citaSnap.exists()) throw new Error("OCUPADO");
+    ]).then(([ocupadoSnap, diaSnap, horaSnap]) => {
+      if(ocupadoSnap.exists()) throw new Error("OCUPADO");
       if(diaSnap.exists()) throw new Error("DIA_BLOQUEADO");
       if(horaSnap.exists()) throw new Error("HORA_BLOQUEADA");
+      transaction.set(ocupadoRef, { date: dateStr, minutes: minutes });
       transaction.set(citaRef, cita);
     });
   })
@@ -1314,33 +1344,27 @@ btnReservar.addEventListener("click", () => {
       confirmCard.style.display = "block";
       confirmCard.scrollIntoView({behavior:"smooth", block:"start"});
 
-      // Importante: como la cita que ACABAMOS de crear también llega
-      // por la escucha en vivo de Firestore (onSnapshot), sin esto la
-      // app "reaccionaría" a su propio cambio y volvería a dibujar la
-      // pantalla de elegir día/hora encima de la de confirmación —
-      // dando la sensación de que el botón de WhatsApp "entra y sale".
-      // Al vaciar la fecha, esa actualización en vivo ya no toca esta
-      // pantalla (ver onDatosActualizados).
+      // Se vacía la fecha para que la actualización en vivo de nuestra
+      // propia cita no redibuje la pantalla de horarios encima de esta.
       fechaInput.value = "";
 
-      // Copia de respaldo hacia la Hoja de Google (correos + historial),
-      // EN SEGUNDO PLANO: si esto falla, no le afecta nada al cliente,
-      // su cita ya quedó guardada arriba, en Firestore.
-      apiPost("crearCita", { ...cita, id: citaId }).catch(() => {});
+      // Copia a la Hoja de Google + correos, en segundo plano.
+      apiPost("crearCita", { id: citaId }).catch(() => {});
     })
     .catch((err) => {
       btnReservar.textContent = "Confirmar cita";
       updateButtonState();
-      if(err && err.message === "OCUPADO"){
-        alert("Ese horario acaba de ser reservado por otra persona. Elige otro, por favor.");
-      }else if(err && err.message === "DIA_BLOQUEADO"){
+      const msg = err && err.message;
+      if(msg === "OCUPADO" || (err && err.code === "permission-denied")){
+        alert("Ese horario ya no está disponible. Elige otro, por favor.");
+      }else if(msg === "DIA_BLOQUEADO"){
         alert("Ese día la barbería no atiende. Elige otra fecha.");
-      }else if(err && err.message === "HORA_BLOQUEADA"){
+      }else if(msg === "HORA_BLOQUEADA"){
         alert("Esa hora no está disponible. Elige otro horario.");
       }else{
         alert("No se pudo registrar la cita. Revisa tu conexión e intenta de nuevo.");
       }
-      renderSlots(dateStr);
+      if(fechaInput.value) renderClientDay();
     });
 });
 
@@ -1355,7 +1379,7 @@ const pinInput = document.getElementById("pinInput");
 const pinError = document.getElementById("pinError");
 
 let barberUnlocked = false;
-let pinValidado = false; // ya escribió el PIN correcto; puede estar esperando el login
+let pinValidado = false;
 
 document.getElementById("btnPin").addEventListener("click", checkPin);
 pinInput.addEventListener("keydown", e => { if(e.key === "Enter") checkPin(); });
@@ -1371,9 +1395,6 @@ function checkPin(){
   }
 }
 
-// Se llama justo después de validar el PIN, y también cada vez que
-// cambia la sesión de Firebase — por si ya habías puesto el PIN y
-// solo faltaba iniciar sesión con el correo del barbero.
 function intentarAbrirPanelBarbero(){
   if(!pinValidado || barberUnlocked) return;
 
@@ -1383,7 +1404,7 @@ function intentarAbrirPanelBarbero(){
     return;
   }
 
-  if(currentUser.email !== BARBER_EMAIL){
+  if(!esBarbero()){
     pinError.textContent = `Esta cuenta (${currentUser.email}) no es la del barbero. Cierra sesión y vuelve a entrar con ${BARBER_EMAIL}.`;
     return;
   }
@@ -1395,32 +1416,30 @@ function intentarAbrirPanelBarbero(){
   if("Notification" in window && Notification.permission === "default"){
     Notification.requestPermission();
   }
-  // Los datos ya están llegando en vivo por Firestore — solo hace
-  // falta dibujarlos por primera vez.
+  iniciarEscuchaFirestore();
   refreshBarberPanel();
 }
 
-document.getElementById("btnSalirPanel").addEventListener("click", () => {
+function cerrarPanelBarbero(){
   barberUnlocked = false;
   pinValidado = false;
   lastKnownCitasCount = null;
   pinInput.value = "";
   pinCard.style.display = "block";
   panelBarbero.style.display = "none";
-});
+}
 
-// Los datos ya llegan en vivo por Firestore, así que "Actualizar ahora"
-// solo vuelve a dibujar con lo que ya está en memoria — pero lo dejamos
-// por si alguna vez quieres forzar un refresco visual.
+document.getElementById("btnSalirPanel").addEventListener("click", cerrarPanelBarbero);
+
 document.getElementById("btnRefrescar").addEventListener("click", () => {
   refreshBarberPanel();
 });
 
-// Avisa con sonido + notificación del navegador cuando aparece una cita nueva
-// mientras tienes el panel abierto (el correo llega igual, esto es un plus).
+// Sonido + notificación cuando aparece una cita nueva con el panel abierto.
 let lastKnownCitasCount = null;
 
 function checkForNewCitas(){
+  if(!citasCargadas) return;
   if(lastKnownCitasCount !== null && CITAS.length > lastKnownCitasCount){
     notifyNewCita();
   }
@@ -1445,7 +1464,7 @@ function playBeep(){
     g.gain.setValueAtTime(0.15, ctx.currentTime);
     o.start();
     o.stop(ctx.currentTime + 0.25);
-  }catch(e){ /* si el navegador bloquea el sonido, no pasa nada grave */ }
+  }catch(e){ /* si el navegador bloquea el sonido, no pasa nada */ }
 }
 
 function refreshBarberPanel(){
@@ -1478,13 +1497,8 @@ function renderListaCitas(){
   const wrap = document.getElementById("listaCitas");
   wrap.innerHTML = "";
 
-  // El resumen solo muestra lo que aún necesita atención (pendiente/retrasada).
-  // Lo ya realizado se archiva y se consulta desde "Buscar histórico".
   let citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
 
-  // Filtro por día: por defecto solo se ve el día elegido (hoy al
-  // entrar), para no mostrar de un solo golpe todo lo que hay
-  // pendiente. Si el barbero le da "Ver todas", se quita el filtro.
   const filtroFecha = filtroFechaCitas.value;
   if(filtroFecha){
     citasActivas = citasActivas.filter(a => a.date === filtroFecha);
@@ -1514,8 +1528,8 @@ function renderListaCitas(){
       item.innerHTML = `
         <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
         <div class="right">
-          <div class="when">${a.time}</div>
-          <select class="badge badge-select ${status}" data-id="${a.id}">
+          <div class="when">${escapeHtml(a.time)}</div>
+          <select class="badge badge-select ${status}" data-id="${escapeHtml(a.id)}">
             <option value="pendiente" ${status === "pendiente" ? "selected" : ""}>Pendiente</option>
             <option value="retrasada" ${status === "retrasada" ? "selected" : ""}>Retrasada</option>
             <option value="realizada" ${status === "realizada" ? "selected" : ""}>Realizada</option>
@@ -1528,7 +1542,12 @@ function renderListaCitas(){
       delBtn.addEventListener("click", () => {
         if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
           delBtn.disabled = true;
-          deleteDoc(doc(db, "citas", a.id))
+          // Se borran juntas la cita y su casilla de "ocupados",
+          // para que el horario vuelva a quedar libre.
+          const batch = writeBatch(db);
+          batch.delete(doc(db, "citas", a.id));
+          batch.delete(doc(db, "ocupados", slotId(a.date, a.minutes)));
+          batch.commit()
             .then(() => {
               apiPost("cancelarCita", { id: a.id }).catch(() => {});
             })
@@ -1541,7 +1560,7 @@ function renderListaCitas(){
   });
 }
 
-// El barbero cambia el estado de una cita (pendiente / retrasada / realizada)
+// El barbero cambia el estado de una cita
 document.getElementById("listaCitas").addEventListener("change", (e) => {
   if(!e.target.classList.contains("badge-select")) return;
   const id = e.target.dataset.id;
@@ -1557,7 +1576,7 @@ document.getElementById("listaCitas").addEventListener("change", (e) => {
 /* --- Filtro por fecha en "Resumen de citas" --- */
 const filtroFechaCitas = document.getElementById("filtroFechaCitas");
 filtroFechaCitas.min = todayStr();
-filtroFechaCitas.value = todayStr(); // al entrar, muestra el día de hoy
+filtroFechaCitas.value = todayStr();
 
 filtroFechaCitas.addEventListener("change", () => {
   renderListaCitas();
@@ -1592,7 +1611,7 @@ fechaConsulta.addEventListener("change", () => {
   const ocupados = taken + horasBloqueadas;
   document.getElementById("availTotal").textContent = all.length;
   document.getElementById("availOcup").textContent = ocupados;
-  document.getElementById("availLibre").textContent = all.length - ocupados;
+  document.getElementById("availLibre").textContent = Math.max(0, all.length - ocupados);
   availSummary.style.display = "flex";
 });
 
@@ -1711,7 +1730,7 @@ document.getElementById("btnBloquearHora").addEventListener("click", () => {
   btn.disabled = true;
   btn.textContent = "Bloqueando…";
 
-  const horaId = `${dateStr}_${Number(minutes)}`;
+  const horaId = slotId(dateStr, minutes);
   setDoc(doc(db, "bloqueosHoras", horaId), { date: dateStr, minutes: Number(minutes), time: time, reason: motivo })
     .then(() => {
       btn.disabled = false;
@@ -1743,7 +1762,7 @@ function renderHorasBloqueadas(){
     item.className = "blocked-item";
     item.innerHTML = `
       <div>
-        <div class="d">${prettyDate(h.date)} · ${h.time}</div>
+        <div class="d">${prettyDate(h.date)} · ${escapeHtml(h.time || "")}</div>
         ${h.reason ? `<div class="m">${escapeHtml(h.reason)}</div>` : ""}
       </div>
     `;
@@ -1796,7 +1815,7 @@ historialFecha.addEventListener("change", () => {
     item.innerHTML = `
       <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
       <div class="right">
-        <div class="when">${a.time}</div>
+        <div class="when">${escapeHtml(a.time)}</div>
         <span class="badge ${status}">${status === "realizada" ? "Realizada" : status === "retrasada" ? "Retrasada" : "Pendiente"}</span>
       </div>
     `;
@@ -1815,7 +1834,6 @@ function yaEstaInstalada(){
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
-// Android / Chrome: el navegador nos avisa cuando la app se puede instalar
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredInstallPrompt = e;
@@ -1834,7 +1852,6 @@ window.addEventListener("appinstalled", () => {
   btnInstalarApp.style.display = "none";
 });
 
-// iPhone / Safari: no existe un botón automático, así que mostramos instrucciones
 function esIOS(){
   return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 }
@@ -1852,7 +1869,7 @@ const lightboxClose = document.getElementById("lightboxClose");
 
 function renderGaleria(){
   galeriaScroll.innerHTML = "";
-  const FOTOS_POR_PAGINA = 6; // 3 columnas x 2 filas, como en el mosaico
+  const FOTOS_POR_PAGINA = 6;
 
   const paginas = [];
   for (let i = 0; i < GALERIA_FOTOS.length; i += FOTOS_POR_PAGINA) {
@@ -1868,9 +1885,6 @@ function renderGaleria(){
       img.src = src;
       img.loading = "lazy";
       img.alt = "Foto de JULIO BARBER JD";
-      // Si la foto todavía no existe en el repositorio, la ocultamos
-      // en vez de mostrar el ícono roto (y si la página se queda sin
-      // fotos, la quitamos también para no dejar un espacio vacío).
       img.addEventListener("error", () => {
         img.remove();
         if (pagina.children.length === 0) pagina.remove();
@@ -1931,14 +1945,16 @@ function renderSocial(){
    ARRANQUE
    ========================================================= */
 resetClientView();
-// Los datos de citas/bloqueos ya no se piden manualmente: arrancan
-// solos (ver iniciarEscuchaFirestore) en cuanto Firebase confirma la
-// sesión, dentro de onAuthStateChanged.
 renderGaleria();
 renderSocial();
 
-// Botón "Agenda tu cita" de la tarjeta de Servicios y precios: abre
-// WhatsApp directo con el barbero, con un mensaje ya escrito.
+// Service worker: permite instalar la app y abrirla con mala señal.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+
 const btnPreciosWhatsapp = document.getElementById("btnPreciosWhatsapp");
 if (btnPreciosWhatsapp) {
   const mensajePrecios = "Hola JULIO BARBER JD, quiero agendar una cita ✂️";

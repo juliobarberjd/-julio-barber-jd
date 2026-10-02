@@ -804,9 +804,10 @@ const BARBER_EMAIL = "juliobarberjd@gmail.com";
 const STEP = 40; // minutos entre citas
 
 // Cuántas citas FUTURAS puede tener apartadas un mismo cliente a la vez.
-// 1 = solo una (evita citas duplicadas). Pon 2 si quieres permitir dos
-// (por ejemplo, un papá que reserva para él y su hijo). 0 = sin límite.
-const MAX_CITAS_ACTIVAS = 1;
+// 0 = sin límite: puede sacar todas las que quiera, y el aviso de
+// arriba le muestra la lista completa ("Ya tienes 2 citas agendadas").
+// Si algún día quieres limitarlo, pon 1, 2, 3...
+const MAX_CITAS_ACTIVAS = 0;
 
 // ---- GALERÍA DE FOTOS ----
 // Sube tus fotos a la carpeta "fotos" del repositorio con nombres

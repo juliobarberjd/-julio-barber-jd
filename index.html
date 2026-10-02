@@ -218,6 +218,67 @@
   .slot.taken{background:transparent; color:#584d43; border-style:dashed; text-decoration:line-through; cursor:not-allowed;}
   .slot.past{opacity:0.45; text-decoration:underline; border-style:dotted; cursor:not-allowed;}
 
+  /* ===== Aviso "Ya tienes cita" (cliente) ===== */
+  .aviso-citas{border-color:var(--brass); background:linear-gradient(180deg, rgba(205,164,62,0.10), var(--panel));}
+  .aviso-titulo{font-weight:800; font-size:15px; color:var(--brass-bright); margin-bottom:8px;}
+  .aviso-lista{list-style:none; margin:0; padding:0;}
+  .aviso-lista li{font-size:14px; line-height:1.45; color:var(--cream); padding:4px 0;}
+  .aviso-hoy{
+    display:inline-block; margin-left:6px; padding:1px 8px; border-radius:20px; font-size:10px;
+    font-weight:800; text-transform:uppercase; letter-spacing:0.06em;
+    background:var(--brass); color:#20160a; vertical-align:1px;
+  }
+  .aviso-nota{font-size:12px; color:var(--cream-dim); margin-top:10px; line-height:1.5;}
+  .aviso-nota a{color:var(--brass-bright); font-weight:700;}
+
+  /* ===== Filas de citas (panel del barbero) ===== */
+  .cita-row{
+    display:flex; align-items:center; gap:12px;
+    background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--brass);
+    border-radius:12px; padding:12px; margin-bottom:8px;
+  }
+  .cita-row.realizada{border-left-color:var(--green);}
+  .cita-row.cancelada{border-left-color:var(--red-bright); opacity:0.7;}
+  .cita-main{flex:1; min-width:0;}
+  .cita-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .cita-top b{font-size:15px; color:var(--cream);}
+  .cita-top .badge{text-transform:none; letter-spacing:0; font-size:11px;}
+  .cita-meta{
+    display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:5px;
+    font-size:12px; color:var(--cream-dim);
+  }
+  .cita-meta span{display:inline-flex; align-items:center; gap:5px;}
+  .cita-meta svg{width:12px; height:12px; flex-shrink:0;}
+  .cita-actions{display:flex; gap:6px; flex-shrink:0;}
+  .icon-btn{
+    width:40px; height:40px; border-radius:10px; padding:0;
+    border:1px solid var(--line); background:var(--ink);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; text-decoration:none;
+  }
+  .icon-btn svg{width:18px; height:18px;}
+  .icon-btn.ok{color:#7fd08a;}
+  .icon-btn.no{color:#e5566b;}
+  .icon-btn.wa{color:#25D366;}
+  .icon-btn.undo{color:var(--cream-dim);}
+  .icon-btn:disabled, .icon-btn.is-disabled{opacity:0.35; cursor:not-allowed; pointer-events:none;}
+  .icon-btn:focus-visible{outline:2px solid var(--brass-bright); outline-offset:2px;}
+  .badge.cancelada{background:rgba(194,60,79,0.16); color:#ef8a98; border:1px solid rgba(194,60,79,0.5);}
+
+  /* ===== Letrero del día (festivo / bloqueado) en el panel ===== */
+  .dia-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    border-radius:12px; padding:12px 14px; margin:4px 0 12px; font-size:13px; line-height:1.4;
+  }
+  .dia-banner.cerrado{background:rgba(163,70,56,0.12); border:1px solid rgba(163,70,56,0.5); color:#e7b7ac;}
+  .dia-banner.abierto{background:rgba(111,174,116,0.10); border:1px solid rgba(111,174,116,0.45); color:#b6dcb9;}
+  .dia-banner b{display:block; color:var(--cream); font-size:14px; margin-bottom:2px;}
+  .dia-banner button{
+    flex-shrink:0; padding:9px 14px; border-radius:9px; border:none; cursor:pointer;
+    font-family:'Inter'; font-weight:800; font-size:12px;
+  }
+  .dia-banner button.habilitar{background:linear-gradient(180deg, var(--brass-bright), var(--brass)); color:#221607;}
+  .dia-banner button.cerrar{background:transparent; border:1px solid var(--line); color:var(--cream-dim);}
+
   /* ===== Tira de días (selector de fecha deslizable) ===== */
   .strip-head{
     display:flex; justify-content:space-between; align-items:baseline; gap:10px;
@@ -511,6 +572,8 @@
   <!-- ================= CLIENTE ================= -->
   <section id="tab-cliente" class="active">
 
+    <div class="card aviso-citas" id="avisoCitas" style="display:none;" role="status" aria-live="polite"></div>
+
     <div class="card" id="authGateCard">
       <h2>Inicia sesión para reservar</h2>
       <div class="small-note">Accede a tu cuenta o crea una gratis para agendar tu cita.</div>
@@ -654,6 +717,7 @@
         <input type="hidden" id="filtroFechaCitas">
         <div class="day-strip" id="stripBarbero" role="group" aria-label="Días con citas"></div>
         <button class="secondary" id="btnVerTodasCitas" style="margin-bottom:10px;">Ver todas (sin filtro)</button>
+        <div id="diaBanner"></div>
         <div id="listaCitas"></div>
       </div>
 
@@ -720,7 +784,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, collection, onSnapshot,
-  runTransaction, updateDoc, deleteDoc, writeBatch
+  runTransaction, updateDoc, deleteDoc, writeBatch, query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* =========================================================
@@ -738,6 +802,11 @@ const BARBER_WHATSAPP = "573104198269";
 const BARBER_PIN = "2345";
 const BARBER_EMAIL = "juliobarberjd@gmail.com";
 const STEP = 40; // minutos entre citas
+
+// Cuántas citas FUTURAS puede tener apartadas un mismo cliente a la vez.
+// 1 = solo una (evita citas duplicadas). Pon 2 si quieres permitir dos
+// (por ejemplo, un papá que reserva para él y su hijo). 0 = sin límite.
+const MAX_CITAS_ACTIVAS = 1;
 
 // ---- GALERÍA DE FOTOS ----
 // Sube tus fotos a la carpeta "fotos" del repositorio con nombres
@@ -936,6 +1005,7 @@ onAuthStateChanged(auth, (user) => {
   }else{
     currentProfile = null;
     renderAuthBar();
+    renderAvisoCitas();
     if(barberUnlocked) cerrarPanelBarbero();
   }
 });
@@ -995,6 +1065,9 @@ let HORAS_BLOQUEADAS = [];
 let dataLoaded = false;
 let dataError = false;
 let citasCargadas = false;
+let MIS_CITAS = [];          // citas del cliente que inició sesión
+let misCitasCargadas = false;
+let HABILITADOS = [];        // festivos que el barbero decidió trabajar
 
 function slotId(dateStr, minutes){ return `${dateStr}_${Number(minutes)}`; }
 
@@ -1019,6 +1092,7 @@ async function apiPost(action, payload){
    FIRESTORE — ESCUCHAS EN TIEMPO REAL
    ========================================================= */
 let unsubCitas = null, unsubOcupados = null, unsubBloqueosDias = null, unsubBloqueosHoras = null;
+let unsubMisCitas = null, unsubHabilitados = null;
 
 function iniciarEscuchaFirestore(){
   if(!unsubOcupados){
@@ -1045,6 +1119,24 @@ function iniciarEscuchaFirestore(){
       HORAS_BLOQUEADAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       onDatosActualizados();
     }, () => setSyncStatus("error"));
+
+    unsubHabilitados = onSnapshot(collection(db, "diasHabilitados"), (snap) => {
+      HABILITADOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      onDatosActualizados();
+    }, () => {});
+  }
+
+  // Las citas propias del cliente (para el aviso "Ya tienes una cita").
+  if(currentUser && !unsubMisCitas){
+    unsubMisCitas = onSnapshot(
+      query(collection(db, "citas"), where("email", "==", currentUser.email)),
+      (snap) => {
+        MIS_CITAS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        misCitasCargadas = true;
+        onDatosActualizados();
+      },
+      () => {}
+    );
   }
 
   // Los datos personales de las citas solo se piden si es el barbero.
@@ -1063,11 +1155,15 @@ function detenerEscuchaFirestore(){
   if(unsubOcupados){ unsubOcupados(); unsubOcupados = null; }
   if(unsubBloqueosDias){ unsubBloqueosDias(); unsubBloqueosDias = null; }
   if(unsubBloqueosHoras){ unsubBloqueosHoras(); unsubBloqueosHoras = null; }
+  if(unsubMisCitas){ unsubMisCitas(); unsubMisCitas = null; }
+  if(unsubHabilitados){ unsubHabilitados(); unsubHabilitados = null; }
   CITAS = []; OCUPADOS = []; BLOQUEOS = []; HORAS_BLOQUEADAS = [];
-  dataLoaded = false; dataError = false; citasCargadas = false;
+  MIS_CITAS = []; HABILITADOS = [];
+  dataLoaded = false; dataError = false; citasCargadas = false; misCitasCargadas = false;
 }
 
 function onDatosActualizados(){
+  renderAvisoCitas();
   renderStripCliente();
   if(fechaInput && fechaInput.value){
     renderClientDay();
@@ -1090,7 +1186,7 @@ function sincronizarOcupados(){
   const hoy = todayStr();
   const existentes = new Set(OCUPADOS.map(o => o.id));
   CITAS.forEach(a => {
-    if(!a.date || a.date < hoy) return;
+    if(!a.date || a.date < hoy || !citaActiva(a)) return;
     const id = slotId(a.date, a.minutes);
     if(existentes.has(id) || ocupadosEnCurso.has(id)) return;
     ocupadosEnCurso.add(id);
@@ -1169,10 +1265,100 @@ function apptDateTime(a){
   return d;
 }
 
+// Estados: "pendiente" (siempre por defecto), "realizada" (✓) y
+// "cancelada" (✗). Las citas viejas que decían "retrasada" se ven
+// como pendientes.
 function getStatus(a){
-  if(a.status === "realizada") return "realizada";
-  if(apptDateTime(a) < new Date()) return "retrasada";
-  return a.status || "pendiente";
+  if(a.status === "realizada" || a.status === "cancelada") return a.status;
+  return "pendiente";
+}
+function citaActiva(a){ return a.status !== "cancelada"; }
+
+/* =========================================================
+   FESTIVOS DE COLOMBIA (se calculan solos, para cualquier año)
+   ---------------------------------------------------------
+   - Fijos: 1 ene, 1 may, 20 jul, 7 ago, 8 dic, 25 dic.
+   - Ley Emiliani (se pasan al lunes siguiente): Reyes, San José,
+     San Pedro y San Pablo, Asunción, Día de la Raza, Todos los
+     Santos, Independencia de Cartagena.
+   - Según la Pascua: Jueves y Viernes Santo, Ascensión, Corpus
+     Christi y Sagrado Corazón (estos tres, en lunes).
+   Por defecto salen CERRADOS. El barbero puede habilitar cualquiera.
+   ========================================================= */
+const _festivosCache = {};
+
+function ymdLocal(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+function domingoDePascua(y){
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, mes - 1, dia);
+}
+
+function alLunesSiguiente(d){
+  const r = new Date(d);
+  const dow = r.getDay();
+  if(dow !== 1) r.setDate(r.getDate() + ((8 - dow) % 7));
+  return r;
+}
+
+function festivosDelAnio(y){
+  if(_festivosCache[y]) return _festivosCache[y];
+  const m = {};
+  const add = (d, nombre) => { const k = ymdLocal(d); if(!m[k]) m[k] = nombre; };
+
+  add(new Date(y, 0, 1),  "Año Nuevo");
+  add(new Date(y, 4, 1),  "Día del Trabajo");
+  add(new Date(y, 6, 20), "Día de la Independencia");
+  add(new Date(y, 7, 7),  "Batalla de Boyacá");
+  add(new Date(y, 11, 8), "Inmaculada Concepción");
+  add(new Date(y, 11, 25),"Navidad");
+
+  [[0, 6, "Reyes Magos"], [2, 19, "San José"], [5, 29, "San Pedro y San Pablo"],
+   [7, 15, "Asunción de la Virgen"], [9, 12, "Día de la Raza"],
+   [10, 1, "Todos los Santos"], [10, 11, "Independencia de Cartagena"]]
+    .forEach(([mes, dia, nombre]) => add(alLunesSiguiente(new Date(y, mes, dia)), nombre));
+
+  const pascua = domingoDePascua(y);
+  const desde = (n) => { const d = new Date(pascua); d.setDate(d.getDate() + n); return d; };
+  add(desde(-3), "Jueves Santo");
+  add(desde(-2), "Viernes Santo");
+  add(desde(43), "Ascensión del Señor");
+  add(desde(64), "Corpus Christi");
+  add(desde(71), "Sagrado Corazón");
+
+  return (_festivosCache[y] = m);
+}
+
+function nombreFestivo(dateStr){
+  return festivosDelAnio(Number(dateStr.slice(0, 4)))[dateStr] || null;
+}
+function estaHabilitado(dateStr){
+  return HABILITADOS.some(h => h.id === dateStr);
+}
+
+// Devuelve el motivo si el día está cerrado para los clientes, o null.
+function diaCerrado(dateStr){
+  const b = isBlocked(dateStr);
+  if(b) return b.reason || "Día de descanso";
+  const fest = nombreFestivo(dateStr);
+  if(fest && !estaHabilitado(dateStr)) return `Festivo (${fest})`;
+  if(generateSlots(dateStr).length === 0) return "Sin horario";
+  return null;
+}
+
+function fechaLarga(dateStr){
+  const d = dateFromStr(dateStr);
+  return `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
+}
+function fechaCorta(dateStr){
+  const d = dateFromStr(dateStr);
+  return `${DIAS_ABREV[d.getDay()].toLowerCase()}, ${d.getDate()} de ${MESES_ABREV[d.getMonth()]}`;
 }
 
 function escapeHtml(str){
@@ -1261,7 +1447,6 @@ function renderClientDay(){
     return;
   }
 
-  const blocked = isBlocked(dateStr);
   const day = dateFromStr(dateStr).getDay();
   const sched = SCHEDULE[day];
 
@@ -1277,9 +1462,18 @@ function renderClientDay(){
   }
   diaInfo.textContent = `${prettyDate(dateStr)} · horario de atención: ${horarioTexto}`;
 
-  if(blocked){
+  const cerrado = diaCerrado(dateStr);
+  if(cerrado){
     cerradoMsg.style.display = "block";
-    cerradoMsg.textContent = `La barbería no atiende este día${blocked.reason ? " — " + blocked.reason : ""}. Elige otra fecha.`;
+    cerradoMsg.textContent = `La barbería no atiende este día — ${cerrado}. Elige otra fecha.`;
+    return;
+  }
+
+  if(limiteAlcanzado()){
+    cerradoMsg.style.display = "block";
+    cerradoMsg.textContent = MAX_CITAS_ACTIVAS === 1
+      ? "Ya tienes una cita agendada (mírala arriba). Podrás reservar otra cuando pase."
+      : `Ya tienes ${MAX_CITAS_ACTIVAS} citas agendadas, que es el máximo. Podrás reservar otra cuando pase alguna.`;
     return;
   }
 
@@ -1317,6 +1511,46 @@ function renderSlots(dateStr){
     }
     slotsDiv.appendChild(btn);
   });
+}
+
+/* =========================================================
+   AVISO "YA TIENES UNA CITA" (cliente)
+   ---------------------------------------------------------
+   Sale apenas entra el cliente si tiene citas por venir, y
+   desaparece solo cuando ya pasó la hora de la cita.
+   ========================================================= */
+function misCitasProximas(){
+  const now = new Date();
+  return MIS_CITAS
+    .filter(a => getStatus(a) === "pendiente" && apptDateTime(a) > now)
+    .sort((a, b) => apptDateTime(a) - apptDateTime(b));
+}
+
+function limiteAlcanzado(){
+  return MAX_CITAS_ACTIVAS > 0 && misCitasCargadas && misCitasProximas().length >= MAX_CITAS_ACTIVAS;
+}
+
+function renderAvisoCitas(){
+  const el = document.getElementById("avisoCitas");
+  const lista = currentUser ? misCitasProximas() : [];
+  if(!lista.length){ el.style.display = "none"; el.innerHTML = ""; return; }
+
+  const n = lista.length;
+  const titulo = n === 1 ? "Ya tienes una cita agendada" : `Ya tienes ${n} citas agendadas`;
+  const items = lista.map(a =>
+    `<li>${fechaLarga(a.date)}, <b>${escapeHtml(a.time)}</b>` +
+    (a.date === todayStr() ? '<span class="aviso-hoy">Hoy</span>' : "") + `</li>`
+  ).join("");
+  const wa = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent("Hola JULIO BARBER JD, quiero cambiar o cancelar mi cita.")}`;
+  const primera = limiteAlcanzado()
+    ? (MAX_CITAS_ACTIVAS === 1 ? "Podrás reservar otra cuando pase esta." : "Podrás reservar otra cuando pase alguna.")
+    : "Si quieres otra cita, elige un día abajo.";
+
+  el.innerHTML =
+    `<div class="aviso-titulo">${titulo}</div>` +
+    `<ul class="aviso-lista">${items}</ul>` +
+    `<div class="aviso-nota">${primera} Para cambiarla o cancelarla, <a href="${wa}" target="_blank" rel="noopener">escríbenos por WhatsApp</a>.</div>`;
+  el.style.display = "block";
 }
 
 /* =========================================================
@@ -1362,7 +1596,7 @@ function horariosLibres(dateStr){
 function infoDiaCliente(dateStr){
   if(!dataLoaded) return { texto: "…" };
   const slots = generateSlots(dateStr);
-  if(isBlocked(dateStr) || slots.length === 0) return { texto: "Cerrado", off: true, clase: "is-closed" };
+  if(diaCerrado(dateStr)) return { texto: "Cerrado", off: true, clase: "is-closed" };
   const libres = horariosLibres(dateStr).length;
   if(libres > 0) return { texto: `${libres} ${libres === 1 ? "libre" : "libres"}`, clase: "has-items" };
   // Hoy, cuando ya pasaron todos los turnos, el día quedó cerrado.
@@ -1375,10 +1609,11 @@ function infoDiaCliente(dateStr){
 }
 
 function infoDiaBarbero(dateStr){
-  const n = CITAS.filter(a => a.date === dateStr).length;
-  const cerrado = isBlocked(dateStr) || generateSlots(dateStr).length === 0;
+  const n = CITAS.filter(a => a.date === dateStr && citaActiva(a)).length;
   if(n > 0) return { texto: `${n} ${n === 1 ? "cita" : "citas"}`, clase: "has-items" };
-  if(cerrado) return { texto: "Cerrado", clase: "is-closed" };
+  const fest = nombreFestivo(dateStr);
+  if(fest && !estaHabilitado(dateStr) && !isBlocked(dateStr)) return { texto: "Festivo", clase: "is-closed" };
+  if(diaCerrado(dateStr)) return { texto: "Cerrado", clase: "is-closed" };
   return { texto: "Sin citas" };
 }
 
@@ -1461,6 +1696,16 @@ function updateButtonState(){
 btnReservar.addEventListener("click", () => {
   if(!currentUser) return;
   const dateStr = fechaInput.value;
+  if(limiteAlcanzado()){
+    alert("Ya tienes una cita agendada. Podrás reservar otra cuando pase.");
+    renderClientDay();
+    return;
+  }
+  if(diaCerrado(dateStr)){
+    alert("Ese día la barbería no atiende. Elige otra fecha.");
+    renderClientDay();
+    return;
+  }
   const minutes = selectedSlot;
   const citaId = slotId(dateStr, minutes);
 
@@ -1653,12 +1898,13 @@ function refreshBarberPanel(){
 }
 
 function renderStats(){
-  document.getElementById("statTotal").textContent = CITAS.length;
+  const activas = CITAS.filter(citaActiva);
+  document.getElementById("statTotal").textContent = activas.length;
   const hoy = todayStr();
-  document.getElementById("statHoy").textContent = CITAS.filter(a => a.date === hoy).length;
+  document.getElementById("statHoy").textContent = activas.filter(a => a.date === hoy).length;
 
   const now = new Date();
-  const future = CITAS.filter(a => apptDateTime(a) >= now).sort((a,b) => apptDateTime(a) - apptDateTime(b));
+  const future = activas.filter(a => getStatus(a) === "pendiente" && apptDateTime(a) >= now).sort((a,b) => apptDateTime(a) - apptDateTime(b));
   const statProx = document.getElementById("statProx");
   if(future.length){
     statProx.textContent = `${shortDateLabel(future[0].date)} · ${future[0].time}`;
@@ -1669,85 +1915,195 @@ function renderStats(){
   }
 }
 
+const ICONOS = {
+  cal: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2zm12 8H5v9h14v-9z"/></svg>',
+  tel: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1l-2.2 2.2z"/></svg>',
+  ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  wa: '<svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 3C9.096 3 3.5 8.596 3.5 15.5c0 2.38.664 4.61 1.816 6.51L3 29l7.16-2.276A12.44 12.44 0 0 0 16 28c6.904 0 12.5-5.596 12.5-12.5S22.904 3 16 3zm5.62 15.11c-.306-.153-1.81-.893-2.09-.995-.28-.102-.484-.153-.688.154-.204.306-.79.994-.968 1.199-.178.204-.357.23-.663.077-.306-.153-1.293-.477-2.464-1.52-.911-.812-1.526-1.815-1.705-2.121-.178-.306-.019-.472.134-.624.138-.138.306-.357.459-.536.153-.178.204-.306.306-.51.102-.204.051-.383-.026-.536-.077-.153-.688-1.658-.943-2.27-.248-.596-.5-.515-.688-.525-.178-.008-.382-.01-.586-.01-.204 0-.535.077-.816.383-.28.306-1.07 1.046-1.07 2.55 0 1.505 1.096 2.96 1.249 3.164.153.204 2.158 3.295 5.229 4.622.73.315 1.3.503 1.744.644.733.233 1.4.2 1.928.121.588-.088 1.81-.74 2.065-1.454.255-.714.255-1.327.178-1.454-.076-.128-.28-.204-.586-.357z"/></svg>'
+};
+
+// Convierte el celular a formato internacional para WhatsApp (Colombia por defecto).
+function telefonoWhatsapp(phone){
+  let d = String(phone || "").replace(/\D/g, "");
+  if(d.length === 10 && d.startsWith("3")) d = "57" + d;
+  return d.length >= 11 ? d : "";
+}
+
+function linkWhatsappCliente(a){
+  const tel = telefonoWhatsapp(a.phone);
+  if(!tel) return "";
+  const yaPaso = apptDateTime(a) < new Date();
+  const texto = yaPaso && getStatus(a) === "pendiente"
+    ? `Hola ${a.name}, te escribimos de JULIO BARBER JD. Tu cita era hoy a las ${a.time} y te estamos esperando. ¿Vienes en camino?`
+    : `Hola ${a.name}, te escribimos de JULIO BARBER JD por tu cita del ${fechaLarga(a.date)} a las ${a.time}.`;
+  return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+}
+
+function cambiarEstadoCita(a, nuevo, boton){
+  boton.disabled = true;
+  updateDoc(doc(db, "citas", a.id), { status: nuevo })
+    .then(() => { apiPost("actualizarEstado", { id: a.id, status: nuevo }).catch(() => {}); })
+    .catch(() => { alert("No se pudo actualizar la cita. Intenta de nuevo."); boton.disabled = false; });
+}
+
+// Cancelar (✗): la cita queda guardada como "cancelada" para el
+// historial, pero con otro ID, para que ese horario vuelva a quedar
+// libre y otro cliente lo pueda reservar.
+function cancelarCitaBarbero(a, boton){
+  if(!confirm(`¿Cancelar la cita de ${a.name} el ${fechaLarga(a.date)} a las ${a.time}?`)) return;
+  boton.disabled = true;
+  const { id, ...datos } = a;
+  const batch = writeBatch(db);
+  batch.set(doc(db, "citas", `${id}_cancelada_${Date.now()}`), {
+    ...datos, status: "cancelada", canceladaEn: new Date().toISOString()
+  });
+  batch.delete(doc(db, "citas", id));
+  batch.delete(doc(db, "ocupados", slotId(a.date, a.minutes)));
+  batch.commit()
+    .then(() => { apiPost("cancelarCita", { id: id }).catch(() => {}); })
+    .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); boton.disabled = false; });
+}
+
+function crearBotonIcono(clase, icono, etiqueta, onClick){
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `icon-btn ${clase}`;
+  b.innerHTML = icono;
+  b.title = etiqueta;
+  b.setAttribute("aria-label", etiqueta);
+  b.addEventListener("click", () => onClick(b));
+  return b;
+}
+
+function crearFilaCita(a){
+  const status = getStatus(a);
+  const row = document.createElement("div");
+  row.className = `cita-row ${status}`;
+  row.innerHTML = `
+    <div class="cita-main">
+      <div class="cita-top"><b>${escapeHtml(a.time)} – ${escapeHtml(a.name)}</b><span class="badge ${status}">${status}</span></div>
+      <div class="cita-meta">
+        <span>${ICONOS.cal}${fechaCorta(a.date)}</span>
+        <span>${ICONOS.tel}${escapeHtml(a.phone)}</span>
+      </div>
+    </div>
+    <div class="cita-actions"></div>`;
+  const acciones = row.querySelector(".cita-actions");
+
+  if(status === "pendiente"){
+    acciones.appendChild(crearBotonIcono("ok", ICONOS.ok, "Marcar como realizada", (b) => cambiarEstadoCita(a, "realizada", b)));
+    acciones.appendChild(crearBotonIcono("no", ICONOS.no, "Cancelar cita", (b) => cancelarCitaBarbero(a, b)));
+  }else if(status === "realizada"){
+    acciones.appendChild(crearBotonIcono("undo", ICONOS.undo, "Volver a pendiente", (b) => cambiarEstadoCita(a, "pendiente", b)));
+  }
+
+  const wa = document.createElement("a");
+  wa.className = "icon-btn wa";
+  wa.innerHTML = ICONOS.wa;
+  const link = linkWhatsappCliente(a);
+  if(link){
+    wa.href = link; wa.target = "_blank"; wa.rel = "noopener";
+    wa.title = `Escribirle a ${a.name} por WhatsApp`;
+    wa.setAttribute("aria-label", wa.title);
+  }else{
+    wa.classList.add("is-disabled");
+    wa.setAttribute("aria-label", "Celular no válido para WhatsApp");
+  }
+  acciones.appendChild(wa);
+  return row;
+}
+
+const ORDEN_ESTADO = { pendiente: 0, realizada: 1, cancelada: 2 };
+
 function renderListaCitas(){
   const wrap = document.getElementById("listaCitas");
   wrap.innerHTML = "";
 
-  let citasActivas = CITAS.filter(a => getStatus(a) !== "realizada");
-
   const filtroFecha = filtroFechaCitas.value;
-  if(filtroFecha){
-    citasActivas = citasActivas.filter(a => a.date === filtroFecha);
-  }
+  renderDiaBanner(filtroFecha);
 
-  if(citasActivas.length === 0){
+  // Con un día elegido: todas las citas de ese día (con su estado).
+  // Con "Ver todas": solo las pendientes de hoy en adelante.
+  const lista = filtroFecha
+    ? CITAS.filter(a => a.date === filtroFecha)
+    : CITAS.filter(a => getStatus(a) === "pendiente" && a.date >= todayStr());
+
+  if(lista.length === 0){
     wrap.innerHTML = filtroFecha
-      ? `<div class="empty">No hay citas pendientes para el ${prettyDate(filtroFecha)}.</div>`
-      : '<div class="empty">No hay citas pendientes por atender. Lo ya realizado lo puedes ver en "Buscar histórico".</div>';
+      ? `<div class="empty">No hay citas para el ${prettyDate(filtroFecha)}.</div>`
+      : '<div class="empty">No hay citas pendientes por atender.</div>';
     return;
   }
 
   const byDate = {};
-  citasActivas.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
-  const dates = Object.keys(byDate).sort();
+  lista.forEach(a => { (byDate[a.date] = byDate[a.date] || []).push(a); });
 
-  dates.forEach(dateStr => {
+  Object.keys(byDate).sort().forEach(dateStr => {
     const title = document.createElement("div");
     title.className = "group-title";
     title.textContent = prettyDate(dateStr);
     wrap.appendChild(title);
 
-    byDate[dateStr].sort((a,b) => a.minutes - b.minutes).forEach(a => {
-      const status = getStatus(a);
-      const item = document.createElement("div");
-      item.className = "appt-item";
-      item.innerHTML = `
-        <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
-        <div class="right">
-          <div class="when">${escapeHtml(a.time)}</div>
-          <select class="badge badge-select ${status}" data-id="${escapeHtml(a.id)}">
-            <option value="pendiente" ${status === "pendiente" ? "selected" : ""}>Pendiente</option>
-            <option value="retrasada" ${status === "retrasada" ? "selected" : ""}>Retrasada</option>
-            <option value="realizada" ${status === "realizada" ? "selected" : ""}>Realizada</option>
-          </select>
-        </div>
-      `;
-      const delBtn = document.createElement("button");
-      delBtn.className = "danger";
-      delBtn.textContent = "Cancelar";
-      delBtn.addEventListener("click", () => {
-        if(confirm(`¿Cancelar la cita de ${a.name} el ${prettyDate(a.date)} a las ${a.time}?`)){
-          delBtn.disabled = true;
-          // Se borran juntas la cita y su casilla de "ocupados",
-          // para que el horario vuelva a quedar libre.
-          const batch = writeBatch(db);
-          batch.delete(doc(db, "citas", a.id));
-          batch.delete(doc(db, "ocupados", slotId(a.date, a.minutes)));
-          batch.commit()
-            .then(() => {
-              apiPost("cancelarCita", { id: a.id }).catch(() => {});
-            })
-            .catch(() => { alert("No se pudo cancelar. Intenta de nuevo."); delBtn.disabled = false; });
-        }
-      });
-      item.querySelector(".right").appendChild(delBtn);
-      wrap.appendChild(item);
-    });
+    byDate[dateStr]
+      .sort((a, b) => (ORDEN_ESTADO[getStatus(a)] - ORDEN_ESTADO[getStatus(b)]) || (a.minutes - b.minutes))
+      .forEach(a => wrap.appendChild(crearFilaCita(a)));
   });
 }
 
-// El barbero cambia el estado de una cita
-document.getElementById("listaCitas").addEventListener("change", (e) => {
-  if(!e.target.classList.contains("badge-select")) return;
-  const id = e.target.dataset.id;
-  const val = e.target.value;
-  e.target.disabled = true;
-  updateDoc(doc(db, "citas", id), { status: val })
-    .then(() => {
-      apiPost("actualizarEstado", { id: id, status: val }).catch(() => {});
-    })
-    .catch(() => { alert("No se pudo actualizar el estado. Intenta de nuevo."); e.target.disabled = false; });
-});
+/* --- Letrero del día: festivos (Habilitar / Volver a cerrar) y días bloqueados --- */
+function renderDiaBanner(dateStr){
+  const el = document.getElementById("diaBanner");
+  el.innerHTML = "";
+  if(!dateStr) return;
+
+  const banner = document.createElement("div");
+  const boton = document.createElement("button");
+  boton.type = "button";
+  const bloqueado = isBlocked(dateStr);
+  const fest = nombreFestivo(dateStr);
+
+  if(bloqueado){
+    banner.className = "dia-banner cerrado";
+    banner.innerHTML = `<div><b>Día bloqueado</b>${escapeHtml(bloqueado.reason || "Los clientes lo ven cerrado.")}</div>`;
+    boton.className = "cerrar";
+    boton.textContent = "Desbloquear";
+    boton.addEventListener("click", () => {
+      boton.disabled = true;
+      deleteDoc(doc(db, "bloqueosDias", dateStr))
+        .then(() => { apiPost("desbloquearDia", { date: dateStr }).catch(() => {}); })
+        .catch(() => { alert("No se pudo desbloquear. Intenta de nuevo."); boton.disabled = false; });
+    });
+  }else if(fest && !estaHabilitado(dateStr)){
+    banner.className = "dia-banner cerrado";
+    banner.innerHTML = `<div><b>Festivo · ${escapeHtml(fest)}</b>Los clientes lo ven cerrado.</div>`;
+    boton.className = "habilitar";
+    boton.textContent = "Habilitar";
+    boton.addEventListener("click", () => {
+      boton.disabled = true;
+      setDoc(doc(db, "diasHabilitados", dateStr), { date: dateStr, nombre: fest })
+        .catch(() => { alert("No se pudo habilitar. Intenta de nuevo."); boton.disabled = false; });
+    });
+  }else if(fest){
+    banner.className = "dia-banner abierto";
+    banner.innerHTML = `<div><b>Festivo habilitado · ${escapeHtml(fest)}</b>Los clientes pueden reservar este día.</div>`;
+    boton.className = "cerrar";
+    boton.textContent = "Volver a cerrar";
+    boton.addEventListener("click", () => {
+      const n = CITAS.filter(a => a.date === dateStr && citaActiva(a)).length;
+      if(n > 0 && !confirm(`Ya hay ${n} cita(s) ese día. Las citas siguen existiendo; solo se cierra para nuevas reservas. ¿Cerrar de todas formas?`)) return;
+      boton.disabled = true;
+      deleteDoc(doc(db, "diasHabilitados", dateStr))
+        .catch(() => { alert("No se pudo cerrar. Intenta de nuevo."); boton.disabled = false; });
+    });
+  }else{
+    return;
+  }
+
+  banner.appendChild(boton);
+  el.appendChild(banner);
+}
 
 /* --- Filtro por fecha en "Resumen de citas" --- */
 const filtroFechaCitas = document.getElementById("filtroFechaCitas");
@@ -1771,15 +2127,15 @@ fechaConsulta.addEventListener("change", () => {
   availClosed.style.display = "none";
   if(!dateStr) return;
 
-  const blocked = isBlocked(dateStr);
-  if(blocked){
+  const cerrado = diaCerrado(dateStr);
+  if(cerrado){
     availClosed.style.display = "block";
-    availClosed.textContent = `Día bloqueado${blocked.reason ? " — " + blocked.reason : ""}.`;
+    availClosed.textContent = `Día cerrado — ${cerrado}.`;
     return;
   }
 
   const all = generateSlots(dateStr);
-  const taken = CITAS.filter(a => a.date === dateStr).length;
+  const taken = CITAS.filter(a => a.date === dateStr && citaActiva(a)).length;
   const horasBloqueadas = HORAS_BLOQUEADAS.filter(h => h.date === dateStr).length;
   const ocupados = taken + horasBloqueadas;
   document.getElementById("availTotal").textContent = all.length;
@@ -1798,7 +2154,7 @@ document.getElementById("btnBloquear").addEventListener("click", () => {
 
   if(BLOQUEOS.some(b => b.date === dateStr)){ alert("Ese día ya está bloqueado."); return; }
 
-  const existingAppts = CITAS.filter(a => a.date === dateStr);
+  const existingAppts = CITAS.filter(a => a.date === dateStr && citaActiva(a));
   if(existingAppts.length > 0){
     const ok = confirm(`Ya hay ${existingAppts.length} cita(s) registradas ese día. ¿Bloquear de todas formas?`);
     if(!ok) return;
@@ -1891,7 +2247,7 @@ document.getElementById("btnBloquearHora").addEventListener("click", () => {
     return;
   }
 
-  const yaOcupada = CITAS.some(a => a.date === dateStr && Number(a.minutes) === Number(minutes));
+  const yaOcupada = CITAS.some(a => a.date === dateStr && Number(a.minutes) === Number(minutes) && citaActiva(a));
   if(yaOcupada){
     const ok = confirm("Ya hay una cita registrada en ese horario. La cita sigue existiendo igual; solo se bloqueará para que nadie más reserve ahí si llega a cancelarse. ¿Bloquear de todas formas?");
     if(!ok) return;
@@ -1971,7 +2327,17 @@ historialFecha.addEventListener("change", () => {
     wrap.appendChild(div);
   }
 
-  const dayAppts = CITAS.filter(a => a.date === dateStr).sort((a,b) => a.minutes - b.minutes);
+  const fest = nombreFestivo(dateStr);
+  if(fest && !blocked){
+    const div = document.createElement("div");
+    div.className = "day-note";
+    div.style.marginBottom = "10px";
+    div.textContent = `Festivo · ${fest}${estaHabilitado(dateStr) ? " (habilitado)" : ""}.`;
+    wrap.appendChild(div);
+  }
+
+  const dayAppts = CITAS.filter(a => a.date === dateStr)
+    .sort((a, b) => (ORDEN_ESTADO[getStatus(a)] - ORDEN_ESTADO[getStatus(b)]) || (a.minutes - b.minutes));
 
   if(dayAppts.length === 0){
     const empty = document.createElement("div");
@@ -1981,19 +2347,7 @@ historialFecha.addEventListener("change", () => {
     return;
   }
 
-  dayAppts.forEach(a => {
-    const status = getStatus(a);
-    const item = document.createElement("div");
-    item.className = "appt-item";
-    item.innerHTML = `
-      <div class="info"><b>${escapeHtml(a.name)}</b><span>${escapeHtml(a.phone)}</span></div>
-      <div class="right">
-        <div class="when">${escapeHtml(a.time)}</div>
-        <span class="badge ${status}">${status === "realizada" ? "Realizada" : status === "retrasada" ? "Retrasada" : "Pendiente"}</span>
-      </div>
-    `;
-    wrap.appendChild(item);
-  });
+  dayAppts.forEach(a => wrap.appendChild(crearFilaCita(a)));
 });
 
 /* =========================================================
@@ -2150,6 +2504,7 @@ function tickDelReloj(){
     }
     if(barberUnlocked) refreshBarberPanel();
   }
+  renderAvisoCitas();
   renderStripCliente();
   if(barberUnlocked) renderStripBarbero();
 }

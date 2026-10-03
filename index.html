@@ -476,13 +476,34 @@
   }
   .price-info{flex:1; min-width:0;}
   .price-title{
-    font-family:'Bebas Neue'; font-size:14px; letter-spacing:0.03em; color:var(--cream);
+    font-family:'Bebas Neue'; font-size:14px; letter-spacing:0.03em; color:var(--cream); text-transform:uppercase;
     line-height:1.15;
   }
   .price-amount{
     font-family:'Bebas Neue'; font-size:24px; color:var(--brass-bright); line-height:1.1; margin-top:2px;
   }
   .price-desc{font-size:11.5px; color:var(--cream-dim); margin-top:2px; line-height:1.3;}
+  /* Servicio elegible al reservar (mismo diseño que la lista de precios) */
+  .serv-list{display:flex; flex-direction:column; gap:10px; margin-bottom:18px;}
+  .serv-opt{
+    position:relative; display:flex; gap:12px; align-items:center; margin:0;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:12px;
+    padding:12px 44px 12px 14px; cursor:pointer;
+    text-transform:none; letter-spacing:0; font-weight:400; color:var(--cream);
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .serv-opt input{position:absolute; opacity:0; pointer-events:none;}
+  .serv-opt::after{
+    content:""; position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    width:20px; height:20px; border-radius:50%; border:2px solid var(--line); box-sizing:border-box;
+  }
+  .serv-opt.is-selected{border-color:var(--brass); background:rgba(205,164,62,0.12);}
+  .serv-opt.is-selected::after{border-color:var(--brass-bright); background:radial-gradient(circle, var(--brass-bright) 0 5px, transparent 6px);}
+  .serv-opt:focus-within{outline:2px solid var(--brass-bright); outline-offset:2px;}
+  .paso-bloqueado{opacity:0.4; pointer-events:none; filter:grayscale(0.3);}
+  .paso-aviso{font-size:12px; color:var(--cream-dim); margin:-8px 0 14px;}
+  @media (prefers-reduced-motion: reduce){ .serv-opt{transition:none;} }
+
   .precios-fotos{
     display:flex; gap:8px; margin-bottom:14px;
   }
@@ -584,8 +605,13 @@
     <div class="card locked" id="reservaCard">
       <h2>Reservar cita <span class="tag">Cliente</span></h2>
 
+      <div class="strip-head"><label>1 · Elige el servicio</label></div>
+      <div class="serv-list" id="serviciosOpciones" role="radiogroup" aria-label="Servicio"></div>
+      <div class="paso-aviso" id="pasoAviso">Elige un servicio para ver los días disponibles.</div>
+
+      <div id="pasoDia" class="paso-bloqueado">
       <div class="strip-head">
-        <label>Elige el día</label>
+        <label>2 · Elige el día</label>
         <span class="strip-month" id="mesCliente"></span>
       </div>
       <input type="hidden" id="fecha" disabled>
@@ -594,7 +620,7 @@
       <div id="cerradoMsg" class="closed-msg" style="display:none;"></div>
 
       <div id="slotsWrap" style="display:none;">
-        <label style="margin-top:18px;">Elige la hora</label>
+        <label style="margin-top:18px;">3 · Elige la hora</label>
         <div id="slots" class="slots"></div>
       </div>
 
@@ -604,6 +630,7 @@
         <label for="celular">Tu celular</label>
         <input type="tel" id="celular" placeholder="Ej: 300 123 4567" autocomplete="off" maxlength="20">
         <button class="primary" id="btnReservar" disabled>Confirmar cita</button>
+      </div>
       </div>
     </div>
 
@@ -616,6 +643,7 @@
         <div class="row"><span>Celular</span><span id="cCelular"></span></div>
         <div class="row"><span>Día</span><span id="cFecha"></span></div>
         <div class="row"><span>Hora</span><span id="cHora"></span></div>
+        <div class="row"><span>Servicio</span><span id="cServicio"></span></div>
       </div>
       <div class="day-note" style="margin-top:14px;">Dale clic al botón para enviarle al barbero la confirmación de tu cita por WhatsApp.</div>
       <a class="whatsapp-btn" id="btnConfirmarWhatsapp" target="_blank">
@@ -642,32 +670,7 @@
         <img src="fotos/foto12.jpg" alt="Corte en JULIO BARBER JD" loading="lazy" onerror="this.remove()">
       </div>
 
-      <div class="price-row">
-        <div class="price-icon">✂️</div>
-        <div class="price-info">
-          <div class="price-title">CORTE DE CABELLO PARA ADULTOS</div>
-          <div class="price-amount">$20.000</div>
-          <div class="price-desc">Sencillo</div>
-        </div>
-      </div>
-
-      <div class="price-row">
-        <div class="price-icon">💈</div>
-        <div class="price-info">
-          <div class="price-title">CORTE DE CABELLO PARA ADULTOS</div>
-          <div class="price-amount">$23.000</div>
-          <div class="price-desc">Incluye: barba + perfilado + mascarilla + cejas. Acabado completo y cuidado para tu imagen.</div>
-        </div>
-      </div>
-
-      <div class="price-row">
-        <div class="price-icon">🧒</div>
-        <div class="price-info">
-          <div class="price-title">CORTE DE CABELLO PARA NIÑOS</div>
-          <div class="price-amount">$19.000</div>
-          <div class="price-desc">Estilo, comodidad y atención especial para los más pequeños.</div>
-        </div>
-      </div>
+      <div id="listaPrecios"></div>
 
       <a class="whatsapp-btn" id="btnPreciosWhatsapp" target="_blank">
         <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
@@ -808,6 +811,22 @@ const STEP = 40; // minutos entre citas
 // arriba le muestra la lista completa ("Ya tienes 2 citas agendadas").
 // Si algún día quieres limitarlo, pon 1, 2, 3...
 const MAX_CITAS_ACTIVAS = 0;
+
+// ---- SERVICIOS Y PRECIOS ----
+// Esta lista alimenta DOS lugares: la tarjeta "Servicios y precios" y
+// el paso 1 de la reserva. Para cambiar un precio, agregar o quitar un
+// servicio, edítalo SOLO aquí.
+//   nombre:  lo que ve el barbero en el panel y llega en los correos.
+//   titulo:  el encabezado que ve el cliente.
+//   precio:  en pesos, sin puntos.
+const SERVICIOS = [
+  { id: "adulto",   icono: "✂️", titulo: "Corte de cabello para adultos", nombre: "Corte adulto sencillo",
+    precio: 20000, desc: "Sencillo" },
+  { id: "completo", icono: "💈", titulo: "Corte de cabello para adultos", nombre: "Corte adulto completo",
+    precio: 23000, desc: "Incluye: barba + perfilado + mascarilla + cejas. Acabado completo y cuidado para tu imagen." },
+  { id: "ninos",    icono: "🧒", titulo: "Corte de cabello para niños",   nombre: "Corte de niño",
+    precio: 19000, desc: "Estilo, comodidad y atención especial para los más pequeños." }
+];
 
 // ---- GALERÍA DE FOTOS ----
 // Sube tus fotos a la carpeta "fotos" del repositorio con nombres
@@ -1406,6 +1425,52 @@ nombreInput.addEventListener("input", updateButtonState);
 celularInput.addEventListener("input", updateButtonState);
 
 let selectedSlot = null;
+let selectedService = null;
+
+function formatoPesos(n){
+  return "$" + String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+function htmlServicio(sv){
+  return `<div class="price-icon" aria-hidden="true">${sv.icono}</div>
+    <div class="price-info">
+      <div class="price-title">${escapeHtml(sv.titulo)}</div>
+      <div class="price-amount">${formatoPesos(sv.precio)}</div>
+      <div class="price-desc">${escapeHtml(sv.desc)}</div>
+    </div>`;
+}
+
+function renderListaPrecios(){
+  document.getElementById("listaPrecios").innerHTML =
+    SERVICIOS.map(sv => `<div class="price-row">${htmlServicio(sv)}</div>`).join("");
+}
+
+function renderServiciosOpciones(){
+  const wrap = document.getElementById("serviciosOpciones");
+  wrap.innerHTML = "";
+  SERVICIOS.forEach(sv => {
+    const opt = document.createElement("label");
+    opt.className = "serv-opt" + (selectedService && selectedService.id === sv.id ? " is-selected" : "");
+    opt.innerHTML = `<input type="radio" name="servicio" value="${sv.id}" ${selectedService && selectedService.id === sv.id ? "checked" : ""}
+      aria-label="${escapeHtml(sv.nombre)}, ${formatoPesos(sv.precio)}">` + htmlServicio(sv);
+    opt.querySelector("input").addEventListener("change", () => elegirServicio(sv));
+    wrap.appendChild(opt);
+  });
+  const elegido = !!selectedService;
+  document.getElementById("pasoDia").classList.toggle("paso-bloqueado", !elegido);
+  document.getElementById("pasoAviso").style.display = elegido ? "none" : "block";
+}
+
+function elegirServicio(sv){
+  const primeraVez = !selectedService;
+  selectedService = sv;
+  renderServiciosOpciones();
+  updateButtonState();
+  if(primeraVez){
+    const suave = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById("pasoDia").scrollIntoView({ behavior: suave ? "smooth" : "auto", block: "nearest" });
+  }
+}
 
 function resetClientView(){
   fechaInput.value = "";
@@ -1414,12 +1479,14 @@ function resetClientView(){
     celularInput.value = "";
   }
   selectedSlot = null;
+  selectedService = null;
   confirmCard.style.display = "none";
   formWrap.style.display = "none";
   slotsWrap.style.display = "none";
   diaInfo.style.display = "none";
   cerradoMsg.style.display = "none";
   if(currentUser && currentProfile) applyProfileToForm();
+  renderServiciosOpciones();
   renderStripCliente();
 }
 window.addEventListener("pageshow", resetClientView);
@@ -1540,6 +1607,7 @@ function renderAvisoCitas(){
   const titulo = n === 1 ? "Ya tienes una cita agendada" : `Ya tienes ${n} citas agendadas`;
   const items = lista.map(a =>
     `<li>${fechaLarga(a.date)}, <b>${escapeHtml(a.time)}</b>` +
+    (a.service ? ` · ${escapeHtml(a.service)}` : "") +
     (a.date === todayStr() ? '<span class="aviso-hoy">Hoy</span>' : "") + `</li>`
   ).join("");
   const wa = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent("Hola JULIO BARBER JD, quiero cambiar o cancelar mi cita.")}`;
@@ -1688,6 +1756,7 @@ function renderStripBarbero(){
 
 function updateButtonState(){
   btnReservar.disabled = !(
+    selectedService !== null &&
     selectedSlot !== null &&
     nombreInput.value.trim() &&
     celularInput.value.trim().length >= 7
@@ -1707,6 +1776,10 @@ btnReservar.addEventListener("click", () => {
     renderClientDay();
     return;
   }
+  if(!selectedService){
+    alert("Elige primero el servicio.");
+    return;
+  }
   const minutes = selectedSlot;
   const citaId = slotId(dateStr, minutes);
 
@@ -1717,6 +1790,8 @@ btnReservar.addEventListener("click", () => {
     name: nombreInput.value.trim(),
     phone: celularInput.value.trim(),
     email: currentUser.email,
+    service: selectedService.nombre,
+    price: selectedService.precio,
     status: "pendiente",
     createdAt: new Date().toISOString()
   };
@@ -1754,8 +1829,9 @@ btnReservar.addEventListener("click", () => {
       document.getElementById("cCelular").textContent = cita.phone;
       document.getElementById("cFecha").textContent = prettyDate(cita.date);
       document.getElementById("cHora").textContent = cita.time;
+      document.getElementById("cServicio").textContent = `${cita.service} (${formatoPesos(cita.price)})`;
 
-      const mensajeWhatsapp = `Hola! Soy ${cita.name}. Confirmo mi cita en JULIO BARBER JD:\n\n📅 Día: ${prettyDate(cita.date)}\n🕐 Hora: ${cita.time}\n\n¡Nos vemos!`;
+      const mensajeWhatsapp = `Hola! Soy ${cita.name}. Confirmo mi cita en JULIO BARBER JD:\n\n📅 Día: ${prettyDate(cita.date)}\n🕐 Hora: ${cita.time}\n✂️ Servicio: ${cita.service} (${formatoPesos(cita.price)})\n\n¡Nos vemos!`;
       document.getElementById("btnConfirmarWhatsapp").href = `https://wa.me/${BARBER_WHATSAPP}?text=${encodeURIComponent(mensajeWhatsapp)}`;
 
       formWrap.style.display = "none";
@@ -1917,6 +1993,7 @@ function renderStats(){
 }
 
 const ICONOS = {
+  tijera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></svg>',
   cal: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2zm12 8H5v9h14v-9z"/></svg>',
   tel: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1l-2.2 2.2z"/></svg>',
   ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
@@ -1938,7 +2015,7 @@ function linkWhatsappCliente(a){
   const yaPaso = apptDateTime(a) < new Date();
   const texto = yaPaso && getStatus(a) === "pendiente"
     ? `Hola ${a.name}, te escribimos de JULIO BARBER JD. Tu cita era hoy a las ${a.time} y te estamos esperando. ¿Vienes en camino?`
-    : `Hola ${a.name}, te escribimos de JULIO BARBER JD por tu cita del ${fechaLarga(a.date)} a las ${a.time}.`;
+    : `Hola ${a.name}, te escribimos de JULIO BARBER JD por tu cita del ${fechaLarga(a.date)} a las ${a.time}${a.service ? ` (${a.service})` : ""}.`;
   return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
 }
 
@@ -1987,6 +2064,7 @@ function crearFilaCita(a){
       <div class="cita-top"><b>${escapeHtml(a.time)} – ${escapeHtml(a.name)}</b><span class="badge ${status}">${status}</span></div>
       <div class="cita-meta">
         <span>${ICONOS.cal}${fechaCorta(a.date)}</span>
+        ${a.service ? `<span>${ICONOS.tijera}${escapeHtml(a.service)}${a.price ? ` (${formatoPesos(a.price)})` : ""}</span>` : ""}
         <span>${ICONOS.tel}${escapeHtml(a.phone)}</span>
       </div>
     </div>
@@ -2474,6 +2552,8 @@ function renderSocial(){
    ========================================================= */
 resetClientView();
 renderGaleria();
+renderListaPrecios();
+renderServiciosOpciones();
 renderSocial();
 
 // Service worker: permite instalar la app y abrirla con mala señal.
